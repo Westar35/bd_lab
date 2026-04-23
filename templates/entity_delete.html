@@ -1,0 +1,30 @@
+{{define "entity_delete.html"}}
+{{template "header" .}}
+<h1>Удаление: {{.Entity.TitleSingle}}</h1>
+
+<div class="alert alert-error">
+    Вы действительно хотите удалить запись? Это действие нельзя отменить.
+</div>
+
+<div class="panel">
+    <table class="detail-table">
+        <tbody>
+            {{range .Entity.Fields}}
+                {{if .InDetail}}
+                    <tr>
+                        <th>{{.Label}}</th>
+                        <td>{{index $.Row .Name}}</td>
+                    </tr>
+                {{end}}
+            {{end}}
+        </tbody>
+    </table>
+</div>
+
+<form method="post" action="/{{.Entity.Slug}}/{{.ID}}/delete" class="form-actions">
+    <button class="btn btn-danger" type="submit">Удалить</button>
+    <a class="btn btn-light" href="/{{.Entity.Slug}}/{{.ID}}">Отмена</a>
+</form>
+
+{{template "footer" .}}
+{{end}}

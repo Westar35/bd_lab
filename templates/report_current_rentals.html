@@ -1,0 +1,42 @@
+{{define "report_current_rentals.html"}}
+{{template "header" .}}
+<h1>Отчет: текущие аренды</h1>
+
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>ID события</th>
+                <th>Номер договора</th>
+                <th>Контрагент</th>
+                <th>Гос. номер</th>
+                <th>Марка</th>
+                <th>Модель</th>
+                <th>Дата выдачи</th>
+                <th>Цена/день</th>
+                <th>Депозит</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{if .Rows}}
+                {{range .Rows}}
+                    <tr>
+                        <td>{{index . "rental_id"}}</td>
+                        <td>{{index . "contract_number"}}</td>
+                        <td>{{index . "counterparty"}}</td>
+                        <td>{{index . "reg_number"}}</td>
+                        <td>{{index . "make"}}</td>
+                        <td>{{index . "model"}}</td>
+                        <td>{{index . "pickup_ts"}}</td>
+                        <td>{{index . "price_per_day"}}</td>
+                        <td>{{index . "deposit"}}</td>
+                    </tr>
+                {{end}}
+            {{else}}
+                <tr><td colspan="9">Текущих аренд нет</td></tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{template "footer" .}}
+{{end}}

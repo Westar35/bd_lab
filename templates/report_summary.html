@@ -1,0 +1,28 @@
+{{define "report_summary.html"}}
+{{template "header" .}}
+<h1>Отчет: сводка базы данных</h1>
+
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Сущность</th>
+                <th>Количество записей</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{if .Rows}}
+                {{range .Rows}}
+                    <tr>
+                        <td>{{index . "entity_name"}}</td>
+                        <td>{{index . "records_count"}}</td>
+                    </tr>
+                {{end}}
+            {{else}}
+                <tr><td colspan="2">Данные отсутствуют</td></tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{template "footer" .}}
+{{end}}

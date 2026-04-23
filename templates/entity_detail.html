@@ -1,0 +1,27 @@
+{{define "entity_detail.html"}}
+{{template "header" .}}
+<h1>Карточка: {{.Entity.TitleSingle}}</h1>
+
+<div class="actions-row">
+    <a class="btn btn-light" href="/{{.Entity.Slug}}">К списку</a>
+    <a class="btn btn-primary" href="/{{.Entity.Slug}}/{{.ID}}/edit">Изменить</a>
+    <a class="btn btn-danger" href="/{{.Entity.Slug}}/{{.ID}}/delete">Удалить</a>
+</div>
+
+<div class="panel">
+    <table class="detail-table">
+        <tbody>
+            {{range .Entity.Fields}}
+                {{if .InDetail}}
+                    <tr>
+                        <th>{{.Label}}</th>
+                        <td>{{index $.Row .Name}}</td>
+                    </tr>
+                {{end}}
+            {{end}}
+        </tbody>
+    </table>
+</div>
+
+{{template "footer" .}}
+{{end}}

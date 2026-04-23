@@ -1,0 +1,35 @@
+{{define "login.html"}}
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}} | Учет автопарка</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="login-page">
+    <div class="login-card">
+        <h1>Учет автопарка</h1>
+        <p>Вход в систему</p>
+
+        {{if .LoggedOut}}
+            <div class="alert alert-success">Вы успешно вышли из системы</div>
+        {{end}}
+        {{if .Error}}
+            <div class="alert alert-error">{{.Error}}</div>
+        {{end}}
+
+        <form method="post" action="/login" class="form-grid">
+            <label for="username">Логин</label>
+            <input id="username" name="username" type="text" value="{{.Username}}" required>
+
+            <label for="password">Пароль</label>
+            <input id="password" name="password" type="password" required>
+
+            <button class="btn btn-primary" type="submit">Войти</button>
+        </form>
+    </div>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
+{{end}}

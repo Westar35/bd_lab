@@ -1,0 +1,63 @@
+{{define "entity_form.html"}}
+{{template "header" .}}
+<h1>{{if .IsEdit}}Редактирование{{else}}Создание{{end}}: {{.Entity.TitleSingle}}</h1>
+
+{{if index .Errors "_form"}}
+    <div class="alert alert-error">{{index .Errors "_form"}}</div>
+{{end}}
+
+<form method="post" action="{{.Action}}" class="form-grid wide">
+    {{range $field := .Fields}}
+        <div class="form-field {{if eq $field.Type "checkbox"}}checkbox-field{{end}}">
+            {{if eq $field.Type "checkbox"}}
+                <label>
+                    <input type="checkbox" name="{{$field.Name}}" {{if or (eq (index $.Values $field.Name) "true") (eq (index $.Values $field.Name) "Да")}}checked{{end}}>
+                    {{$field.Label}}
+                </label>
+            {{else if eq $field.Type "textarea"}}
+                <label for="{{$field.Name}}">
+                    {{$field.Label}}{{if $field.Required}} *{{end}}
+                </label>
+                <textarea id="{{$field.Name}}" name="{{$field.Name}}" rows="3" {{if $field.Required}}required{{end}}>{{index $.Values $field.Name}}</textarea>
+            {{else if eq $field.Type "select"}}
+                <label for="{{$field.Name}}">
+                    {{$field.Label}}{{if $field.Required}} *{{end}}
+                </label>
+                <select id="{{$field.Name}}" name="{{$field.Name}}" {{if $field.Required}}required{{end}}>
+                    <option value="">{{if $field.Required}}Выберите значение{{else}}Не выбрано{{end}}</option>
+                    {{range $opt := index $.Selects $field.Name}}
+                        <option value="{{$opt.ID}}" {{if eq $opt.ID (index $.Values $field.Name)}}selected{{end}}>{{$opt.Label}}</option>
+                    {{end}}
+                </select>
+            {{else}}
+                <label for="{{$field.Name}}">
+                    {{$field.Label}}{{if $field.Required}} *{{end}}
+                </label>
+                <input
+                    id="{{$field.Name}}"
+                    name="{{$field.Name}}"
+                    type="{{if eq $field.Type "decimal"}}number{{else if eq $field.Type "int"}}number{{else if eq $field.Type "datetime-local"}}datetime-local{{else if eq $field.Type "date"}}date{{else}}text{{end}}"
+                    {{if or (eq $field.Type "decimal") (eq $field.Type "int")}}step="{{if eq $field.Type "decimal"}}0.01{{else}}1{{end}}"{{end}}
+                    value="{{index $.Values $field.Name}}"
+                    placeholder="{{$field.Placeholder}}"
+                    {{if $field.Required}}required{{end}}
+                >
+            {{end}}
+
+            {{if index $.Errors $field.Name}}
+                <div class="field-error">{{index $.Errors $field.Name}}</div>
+            {{end}}
+        </div>
+    {{end}}
+
+    <div class="form-actions">
+        <button type="submit" class="btn btn-primary">{{.SubmitLabel}}</button>
+        <a class="btn btn-light" href="/{{.Entity.Slug}}">Отмена</a>
+        {{if .IsEdit}}
+            <a class="btn btn-light" href="/{{.Entity.Slug}}/{{.ID}}">К карточке</a>
+        {{end}}
+    </div>
+</form>
+
+{{template "footer" .}}
+{{end}}

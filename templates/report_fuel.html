@@ -1,0 +1,48 @@
+{{define "report_fuel.html"}}
+{{template "header" .}}
+<h1>Отчет: расходы на топливо</h1>
+
+<form method="get" class="filters-bar">
+    <div class="filter-item">
+        <label for="date_from">Дата с</label>
+        <input id="date_from" name="date_from" type="date" value="{{.DateFrom}}" required>
+    </div>
+    <div class="filter-item">
+        <label for="date_to">Дата по</label>
+        <input id="date_to" name="date_to" type="date" value="{{.DateTo}}" required>
+    </div>
+    <div class="filters-actions">
+        <button class="btn btn-primary" type="submit">Построить</button>
+    </div>
+</form>
+
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Гос. номер</th>
+                <th>Марка</th>
+                <th>Модель</th>
+                <th>Литры</th>
+                <th>Сумма</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{if .Rows}}
+                {{range .Rows}}
+                    <tr>
+                        <td>{{index . "reg_number"}}</td>
+                        <td>{{index . "make"}}</td>
+                        <td>{{index . "model"}}</td>
+                        <td>{{index . "total_liters"}}</td>
+                        <td>{{index . "total_amount"}}</td>
+                    </tr>
+                {{end}}
+            {{else}}
+                <tr><td colspan="5">Данные отсутствуют</td></tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{template "footer" .}}
+{{end}}

@@ -1,0 +1,21 @@
+{{define "search_index.html"}}
+{{template "header" .}}
+<h1>Поисковые запросы</h1>
+<p class="muted">Обязательные учебные сценарии поиска по базе.</p>
+
+<div class="grid-cards">
+    <a class="card-link" href="/search/vehicles-by-make">
+        <h3>Поиск 1: Автомобили по марке</h3>
+        <p>Поиск по одному атрибуту одной таблицы.</p>
+    </a>
+    <a class="card-link" href="/search/trips">
+        <h3>Поиск 2: Путевые листы</h3>
+        <p>Поиск по водителю, автомобилю и периоду с объединением таблиц.</p>
+    </a>
+    <a class="card-link" href="/search/mileage">
+        <h3>Поиск 3: Суммарный пробег</h3>
+        <p>Агрегированный запрос по водителям и автомобилям за период.</p>
+    </a>
+</div>
+{{template "footer" .}}
+{{end}}

@@ -1,0 +1,49 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    container_name: fleet_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: fleet_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "Fgrths197+"
+      TZ: Europe/Moscow
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fleet_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    container_name: fleet_app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8080
+      APP_ENV: production
+      SESSION_KEY: super_secret_session_key_for_docker_123456
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: admin123
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: "Fgrths197+"
+      DB_NAME: fleet_db
+      DB_SSLMODE: disable
+      AUTO_MIGRATE: "true"
+      AUTO_SEED: "true"
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:

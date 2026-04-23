@@ -1,0 +1,16 @@
+{{define "reports_index.html"}}
+{{template "header" .}}
+<h1>Отчеты и статистика</h1>
+<p class="muted">Сводные данные по автопарку и операциям.</p>
+
+<div class="grid-cards">
+    <a class="card-link" href="/reports/mileage"><h3>Пробег за период</h3><p>Суммарный пробег и количество поездок по автомобилям.</p></a>
+    <a class="card-link" href="/reports/fuel"><h3>Расходы на топливо</h3><p>Литры и суммы за период по автомобилям.</p></a>
+    <a class="card-link" href="/reports/maintenance"><h3>Расходы на обслуживание</h3><p>Стоимость ТО и ремонтов по автомобилям.</p></a>
+    <a class="card-link" href="/reports/by-status"><h3>Автомобили по статусам</h3><p>Распределение автопарка по статусам.</p></a>
+    <a class="card-link" href="/reports/by-class"><h3>Автомобили по классам</h3><p>Распределение автопарка по классам.</p></a>
+    <a class="card-link" href="/reports/current-rentals"><h3>Текущие аренды</h3><p>Все автомобили, находящиеся в аренде сейчас.</p></a>
+    <a class="card-link" href="/reports/summary"><h3>Сводка базы</h3><p>Количество записей в основных таблицах.</p></a>
+</div>
+{{template "footer" .}}
+{{end}}

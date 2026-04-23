@@ -1,0 +1,15 @@
+{{define "dashboard.html"}}
+{{template "header" .}}
+<h1>Главная панель</h1>
+<p class="muted">Выберите раздел для работы с данными, поиска или формирования отчета.</p>
+
+<div class="grid-cards">
+    {{range .Sections}}
+        <a class="card-link" href="{{.Path}}">
+            <h3>{{.Name}}</h3>
+            <p>{{.Description}}</p>
+        </a>
+    {{end}}
+</div>
+{{template "footer" .}}
+{{end}}

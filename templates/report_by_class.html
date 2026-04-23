@@ -1,0 +1,28 @@
+{{define "report_by_class.html"}}
+{{template "header" .}}
+<h1>Отчет: автомобили по классам</h1>
+
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Класс</th>
+                <th>Количество автомобилей</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{if .Rows}}
+                {{range .Rows}}
+                    <tr>
+                        <td>{{index . "class_name"}}</td>
+                        <td>{{index . "vehicles_count"}}</td>
+                    </tr>
+                {{end}}
+            {{else}}
+                <tr><td colspan="2">Данные отсутствуют</td></tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{template "footer" .}}
+{{end}}

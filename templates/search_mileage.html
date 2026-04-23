@@ -1,0 +1,52 @@
+{{define "search_mileage.html"}}
+{{template "header" .}}
+<h1>Суммарный пробег по водителям и автомобилям</h1>
+
+<form method="get" class="filters-bar">
+    <div class="filter-item">
+        <label for="date_from">Дата с</label>
+        <input id="date_from" name="date_from" type="date" value="{{.DateFrom}}" required>
+    </div>
+
+    <div class="filter-item">
+        <label for="date_to">Дата по</label>
+        <input id="date_to" name="date_to" type="date" value="{{.DateTo}}" required>
+    </div>
+
+    <div class="filters-actions">
+        <button class="btn btn-primary" type="submit">Показать</button>
+        <a class="btn btn-light" href="/search/mileage">Сбросить</a>
+    </div>
+</form>
+
+{{if .Searched}}
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Водитель</th>
+                <th>Марка</th>
+                <th>Модель</th>
+                <th>Суммарный пробег, км</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{if .Rows}}
+                {{range .Rows}}
+                    <tr>
+                        <td>{{index . "driver_fio"}}</td>
+                        <td>{{index . "make"}}</td>
+                        <td>{{index . "model"}}</td>
+                        <td>{{index . "total_km"}}</td>
+                    </tr>
+                {{end}}
+            {{else}}
+                <tr><td colspan="4">Данные за период отсутствуют</td></tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{end}}
+
+{{template "footer" .}}
+{{end}}

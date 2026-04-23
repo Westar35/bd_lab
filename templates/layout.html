@@ -1,0 +1,46 @@
+{{define "header"}}
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.BaseData.Title}} | Учет автопарка</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div class="app-shell">
+    <header class="topbar">
+        <div>
+            <a class="brand" href="/">Учет автопарка</a>
+            <p class="subtitle">Учебная система учета транспорта</p>
+        </div>
+        <div class="user-box">
+            <span>Пользователь: <strong>{{.BaseData.Username}}</strong></span>
+            <form method="post" action="/logout">
+                <button type="submit" class="btn btn-light">Выйти</button>
+            </form>
+        </div>
+    </header>
+
+    <nav class="main-nav">
+        {{range .BaseData.NavItems}}
+            <a href="{{.Path}}" class="{{if .Active}}active{{end}}">{{.Name}}</a>
+        {{end}}
+    </nav>
+
+    <main class="content">
+        {{if .BaseData.Flash}}
+            <div class="alert alert-success">{{.BaseData.Flash}}</div>
+        {{end}}
+        {{if .BaseData.Error}}
+            <div class="alert alert-error">{{.BaseData.Error}}</div>
+        {{end}}
+{{end}}
+
+{{define "footer"}}
+    </main>
+</div>
+<script src="/static/js/app.js"></script>
+</body>
+</html>
+{{end}}

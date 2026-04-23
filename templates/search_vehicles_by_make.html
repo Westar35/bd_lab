@@ -1,0 +1,48 @@
+{{define "search_vehicles_by_make.html"}}
+{{template "header" .}}
+<h1>Поиск автомобилей по марке</h1>
+
+<form method="get" class="filters-bar">
+    <div class="filter-item">
+        <label for="make">Марка автомобиля</label>
+        <input id="make" name="make" value="{{.Make}}" placeholder="Например, Toyota">
+    </div>
+    <div class="filters-actions">
+        <button class="btn btn-primary" type="submit">Найти</button>
+        <a class="btn btn-light" href="/search/vehicles-by-make">Сбросить</a>
+    </div>
+</form>
+
+{{if .Searched}}
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Марка</th>
+                <th>Модель</th>
+                <th>Год</th>
+                <th>Гос. номер</th>
+                <th>Статус</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{if .Rows}}
+                {{range .Rows}}
+                    <tr>
+                        <td>{{index . "make"}}</td>
+                        <td>{{index . "model"}}</td>
+                        <td>{{index . "year"}}</td>
+                        <td>{{index . "reg_number"}}</td>
+                        <td>{{index . "status_name"}}</td>
+                    </tr>
+                {{end}}
+            {{else}}
+                <tr><td colspan="5">Ничего не найдено</td></tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{end}}
+
+{{template "footer" .}}
+{{end}}

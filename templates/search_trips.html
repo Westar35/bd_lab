@@ -1,0 +1,72 @@
+{{define "search_trips.html"}}
+{{template "header" .}}
+<h1>Поиск путевых листов</h1>
+<p class="muted">По водителю, автомобилю и периоду.</p>
+
+<form method="get" class="filters-bar">
+    <div class="filter-item">
+        <label for="driver_id">Водитель</label>
+        <select id="driver_id" name="driver_id">
+            <option value="">Все водители</option>
+            {{range .Drivers}}
+                <option value="{{.ID}}" {{if eq $.DriverID .ID}}selected{{end}}>{{.Label}}</option>
+            {{end}}
+        </select>
+    </div>
+
+    <div class="filter-item">
+        <label for="reg_number">Гос. номер автомобиля</label>
+        <input id="reg_number" name="reg_number" value="{{.RegNumber}}" placeholder="Например, А123ВС77">
+    </div>
+
+    <div class="filter-item">
+        <label for="date_from">Дата с</label>
+        <input id="date_from" name="date_from" type="date" value="{{.DateFrom}}" required>
+    </div>
+
+    <div class="filter-item">
+        <label for="date_to">Дата по</label>
+        <input id="date_to" name="date_to" type="date" value="{{.DateTo}}" required>
+    </div>
+
+    <div class="filters-actions">
+        <button class="btn btn-primary" type="submit">Найти</button>
+        <a class="btn btn-light" href="/search/trips">Сбросить</a>
+    </div>
+</form>
+
+{{if .Searched}}
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Дата поездки</th>
+                <th>Водитель</th>
+                <th>Гос. номер</th>
+                <th>Одометр начало</th>
+                <th>Одометр конец</th>
+                <th>Пробег, км</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{if .Rows}}
+                {{range .Rows}}
+                    <tr>
+                        <td>{{index . "trip_date"}}</td>
+                        <td>{{index . "driver_fio"}}</td>
+                        <td>{{index . "reg_number"}}</td>
+                        <td>{{index . "odometer_start"}}</td>
+                        <td>{{index . "odometer_end"}}</td>
+                        <td>{{index . "distance_km"}}</td>
+                    </tr>
+                {{end}}
+            {{else}}
+                <tr><td colspan="6">Ничего не найдено</td></tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{end}}
+
+{{template "footer" .}}
+{{end}}
