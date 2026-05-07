@@ -3,7 +3,11 @@
 <h1>{{.Entity.Title}}</h1>
 
 <div class="actions-row">
-    <a class="btn btn-primary" href="/{{.Entity.Slug}}/new">Добавить {{.Entity.TitleSingle}}</a>
+    {{if not .Entity.ReadOnly}}
+        <a class="btn btn-primary" href="/{{.Entity.Slug}}/new">Добавить {{.Entity.TitleSingle}}</a>
+    {{else}}
+        <span class="muted">Журнал формируется автоматически и доступен только для просмотра.</span>
+    {{end}}
 </div>
 
 <form method="get" class="filters-bar">
@@ -12,20 +16,24 @@
     <input type="hidden" name="dir" value="{{.Query.Dir}}">
 
     <div class="filter-item">
-        <label for="q">Текстовый поиск</label>
-        <input id="q" name="q" value="{{.Query.Q}}" placeholder="Введите текст для поиска">
+        <label for="q">Поиск</label>
+        <input id="q" name="q" value="{{.Query.Q}}" placeholder="ФИО, VIN, госномер, договор, статус...">
     </div>
 
     {{range $field := .Entity.Fields}}
         {{if $field.Filterable}}
             <div class="filter-item">
                 <label for="f_{{$field.Name}}">{{$field.Label}}</label>
-                <select id="f_{{$field.Name}}" name="f_{{$field.Name}}">
-                    <option value="">Все</option>
-                    {{range $opt := index $.FilterSets $field.Name}}
-                        <option value="{{$opt.ID}}" {{if eq $opt.ID (index $.Query.Filters $field.Name)}}selected{{end}}>{{$opt.Label}}</option>
-                    {{end}}
-                </select>
+                {{if or (eq $field.Type "select") (eq $field.Type "checkbox")}}
+                    <select id="f_{{$field.Name}}" name="f_{{$field.Name}}">
+                        <option value="">Все</option>
+                        {{range $opt := index $.FilterSets $field.Name}}
+                            <option value="{{$opt.ID}}" {{if eq $opt.ID (index $.Query.Filters $field.Name)}}selected{{end}}>{{$opt.Label}}</option>
+                        {{end}}
+                    </select>
+                {{else}}
+                    <input id="f_{{$field.Name}}" name="f_{{$field.Name}}" value="{{index $.Query.Filters $field.Name}}" placeholder="{{$field.Label}}">
+                {{end}}
             </div>
         {{end}}
     {{end}}
@@ -66,8 +74,10 @@
                         {{end}}
                         <td class="actions-cell">
                             <a href="/{{$.Entity.Slug}}/{{index $row "id"}}">Открыть</a>
-                            <a href="/{{$.Entity.Slug}}/{{index $row "id"}}/edit">Изменить</a>
-                            <a class="danger-link" href="/{{$.Entity.Slug}}/{{index $row "id"}}/delete">Удалить</a>
+                            {{if not $.Entity.ReadOnly}}
+                                <a href="/{{$.Entity.Slug}}/{{index $row "id"}}/edit">Изменить</a>
+                                <a class="danger-link" href="/{{$.Entity.Slug}}/{{index $row "id"}}/delete">Удалить</a>
+                            {{end}}
                         </td>
                     </tr>
                 {{end}}

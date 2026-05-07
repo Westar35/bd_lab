@@ -7,15 +7,16 @@ import (
 	"log"
 	"time"
 
+	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-// OpenWithRetry подключается к PostgreSQL с несколькими попытками.
-func OpenWithRetry(ctx context.Context, dsn string, maxAttempts int, delay time.Duration) (*sql.DB, error) {
+// OpenWithRetry подключается к БД с несколькими попытками.
+func OpenWithRetry(ctx context.Context, driverName, dsn string, maxAttempts int, delay time.Duration) (*sql.DB, error) {
 	var lastErr error
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		db, err := sql.Open("pgx", dsn)
+		db, err := sql.Open(driverName, dsn)
 		if err != nil {
 			lastErr = err
 		} else {

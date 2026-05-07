@@ -43,7 +43,7 @@ func ParseAndValidateForm(entity models.EntityConfig, form url.Values) (map[stri
 			if field.Nullable || field.Type == "checkbox" || !field.Required {
 				if field.Type == "checkbox" {
 					parsed[field.Name] = false
-				} else if field.Type == "text" || field.Type == "textarea" {
+				} else if field.Type == "text" || field.Type == "textarea" || field.Type == "email" {
 					parsed[field.Name] = nil
 				} else if field.Type == "select" || field.Type == "date" || field.Type == "datetime-local" || field.Type == "decimal" || field.Type == "int" {
 					parsed[field.Name] = nil
@@ -55,7 +55,15 @@ func ParseAndValidateForm(entity models.EntityConfig, form url.Values) (map[stri
 		}
 
 		switch field.Type {
-		case "text", "textarea":
+		case "text", "textarea", "email":
+			if field.MaxLength > 0 && len([]rune(input)) > field.MaxLength {
+				errs[field.Name] = fmt.Sprintf("Максимальная длина поля: %d символов", field.MaxLength)
+				continue
+			}
+			if field.Type == "email" && !strings.Contains(input, "@") {
+				errs[field.Name] = "Введите корректный email"
+				continue
+			}
 			parsed[field.Name] = input
 		case "int":
 			n, err := strconv.Atoi(input)
@@ -63,12 +71,40 @@ func ParseAndValidateForm(entity models.EntityConfig, form url.Values) (map[stri
 				errs[field.Name] = "Введите целое число"
 				continue
 			}
+			if field.Min != "" {
+				min, _ := strconv.Atoi(field.Min)
+				if n < min {
+					errs[field.Name] = fmt.Sprintf("Значение не может быть меньше %d", min)
+					continue
+				}
+			}
+			if field.Max != "" {
+				max, _ := strconv.Atoi(field.Max)
+				if n > max {
+					errs[field.Name] = fmt.Sprintf("Значение не может быть больше %d", max)
+					continue
+				}
+			}
 			parsed[field.Name] = n
 		case "decimal":
 			f, err := strconv.ParseFloat(strings.ReplaceAll(input, ",", "."), 64)
 			if err != nil {
 				errs[field.Name] = "Введите корректное число"
 				continue
+			}
+			if field.Min != "" {
+				min, _ := strconv.ParseFloat(field.Min, 64)
+				if f < min {
+					errs[field.Name] = fmt.Sprintf("Значение не может быть меньше %s", field.Min)
+					continue
+				}
+			}
+			if field.Max != "" {
+				max, _ := strconv.ParseFloat(field.Max, 64)
+				if f > max {
+					errs[field.Name] = fmt.Sprintf("Значение не может быть больше %s", field.Max)
+					continue
+				}
 			}
 			parsed[field.Name] = f
 		case "select":
@@ -116,8 +152,9 @@ func runEntityBusinessValidation(entity models.EntityConfig, values map[string]a
 			errs["vin"] = "VIN должен содержать 17 символов"
 		}
 		year, ok := values["year"].(int)
-		if ok && (year < 1980 || year > 2100) {
-			errs["year"] = "Год выпуска должен быть в диапазоне 1980-2100"
+		maxYear := time.Now().Year() + 1
+		if ok && (year < 1980 || year > maxYear) {
+			errs["year"] = fmt.Sprintf("Год выпуска должен быть в диапазоне 1980-%d", maxYear)
 		}
 		if km, ok := values["current_odometer_km"].(int); ok && km < 0 {
 			errs["current_odometer_km"] = "Пробег не может быть отрицательным"

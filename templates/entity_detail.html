@@ -4,8 +4,10 @@
 
 <div class="actions-row">
     <a class="btn btn-light" href="/{{.Entity.Slug}}">К списку</a>
-    <a class="btn btn-primary" href="/{{.Entity.Slug}}/{{.ID}}/edit">Изменить</a>
-    <a class="btn btn-danger" href="/{{.Entity.Slug}}/{{.ID}}/delete">Удалить</a>
+    {{if not .Entity.ReadOnly}}
+        <a class="btn btn-primary" href="/{{.Entity.Slug}}/{{.ID}}/edit">Изменить</a>
+        <a class="btn btn-danger" href="/{{.Entity.Slug}}/{{.ID}}/delete">Удалить</a>
+    {{end}}
 </div>
 
 <div class="panel">

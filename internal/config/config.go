@@ -28,6 +28,25 @@ type Config struct {
 	DBSSLMode   string
 	DatabaseURL string
 
+	PostgresHost     string
+	PostgresPort     string
+	PostgresUser     string
+	PostgresPassword string
+	PostgresDB       string
+	PostgresSSLMode  string
+	PostgresURL      string
+
+	MySQLHost      string
+	MySQLPort      string
+	MySQLUser      string
+	MySQLPassword  string
+	MySQLDatabase  string
+	MySQLParseTime string
+	MySQLLoc       string
+	MySQLURL       string
+
+	DefaultDB string
+
 	AutoMigrate bool
 	AutoSeed    bool
 }
@@ -48,11 +67,30 @@ func Load() (*Config, error) {
 
 		DBHost:      getEnv("DB_HOST", "localhost"),
 		DBPort:      getEnv("DB_PORT", "5432"),
-		DBUser:      getEnv("DB_USER", "postgres"),
-		DBPassword:  getEnv("DB_PASSWORD", "Fgrths197+"),
+		DBUser:      getEnv("DB_USER", "fleet_user"),
+		DBPassword:  getEnv("DB_PASSWORD", "fleet_password"),
 		DBName:      getEnv("DB_NAME", "fleet_db"),
 		DBSSLMode:   getEnv("DB_SSLMODE", "disable"),
 		DatabaseURL: getEnv("DATABASE_URL", ""),
+
+		PostgresHost:     getEnv("POSTGRES_HOST", getEnv("DB_HOST", "localhost")),
+		PostgresPort:     getEnv("POSTGRES_PORT", getEnv("DB_PORT", "5432")),
+		PostgresUser:     getEnv("POSTGRES_USER", getEnv("DB_USER", "fleet_user")),
+		PostgresPassword: getEnv("POSTGRES_PASSWORD", getEnv("DB_PASSWORD", "fleet_password")),
+		PostgresDB:       getEnv("POSTGRES_DB", getEnv("DB_NAME", "fleet_db")),
+		PostgresSSLMode:  getEnv("POSTGRES_SSLMODE", getEnv("DB_SSLMODE", "disable")),
+		PostgresURL:      getEnv("POSTGRES_URL", getEnv("DATABASE_URL", "")),
+
+		MySQLHost:      getEnv("MYSQL_HOST", "localhost"),
+		MySQLPort:      getEnv("MYSQL_PORT", "3306"),
+		MySQLUser:      getEnv("MYSQL_USER", "fleet_user"),
+		MySQLPassword:  getEnv("MYSQL_PASSWORD", "fleet_password"),
+		MySQLDatabase:  getEnv("MYSQL_DATABASE", "fleet_db"),
+		MySQLParseTime: getEnv("MYSQL_PARSE_TIME", "true"),
+		MySQLLoc:       getEnv("MYSQL_LOC", "Local"),
+		MySQLURL:       getEnv("MYSQL_URL", ""),
+
+		DefaultDB: getEnv("DEFAULT_DB", "postgres"),
 
 		AutoMigrate: getEnvAsBool("AUTO_MIGRATE", true),
 		AutoSeed:    getEnvAsBool("AUTO_SEED", false),
@@ -73,19 +111,54 @@ func (c *Config) Address() string {
 	return fmt.Sprintf("%s:%s", c.AppHost, c.AppPort)
 }
 
-// DSN возвращает строку подключения к PostgreSQL.
+// DSN возвращает строку подключения к PostgreSQL (legacy helper).
 func (c *Config) DSN() string {
-	if c.DatabaseURL != "" {
-		return c.DatabaseURL
+	return c.PostgresDSN()
+}
+
+// PostgresDSN возвращает строку подключения к PostgreSQL.
+func (c *Config) PostgresDSN() string {
+	if c.PostgresURL != "" {
+		return c.PostgresURL
 	}
 	return fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		c.DBHost,
-		c.DBPort,
-		c.DBUser,
-		c.DBPassword,
-		c.DBName,
-		c.DBSSLMode,
+		c.PostgresHost,
+		c.PostgresPort,
+		c.PostgresUser,
+		c.PostgresPassword,
+		c.PostgresDB,
+		c.PostgresSSLMode,
+	)
+}
+
+// MySQLDSN возвращает строку подключения к MySQL.
+func (c *Config) MySQLDSN() string {
+	if c.MySQLURL != "" {
+		return c.MySQLURL
+	}
+	return fmt.Sprintf(
+		"%s:%s@tcp(%s:%s)/%s?parseTime=%s&loc=%s&multiStatements=true&charset=utf8mb4,utf8",
+		c.MySQLUser,
+		c.MySQLPassword,
+		c.MySQLHost,
+		c.MySQLPort,
+		c.MySQLDatabase,
+		c.MySQLParseTime,
+		c.MySQLLoc,
+	)
+}
+
+// MySQLServerDSN возвращает строку подключения к серверу MySQL без выбора БД.
+func (c *Config) MySQLServerDSN() string {
+	return fmt.Sprintf(
+		"%s:%s@tcp(%s:%s)/?parseTime=%s&loc=%s&multiStatements=true&charset=utf8mb4,utf8",
+		c.MySQLUser,
+		c.MySQLPassword,
+		c.MySQLHost,
+		c.MySQLPort,
+		c.MySQLParseTime,
+		c.MySQLLoc,
 	)
 }
 

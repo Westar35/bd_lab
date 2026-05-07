@@ -4,10 +4,11 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// HumanizeDBError преобразует техническую ошибку PostgreSQL в понятный текст.
+// HumanizeDBError преобразует техническую ошибку БД в понятный текст.
 func HumanizeDBError(err error) string {
 	if err == nil {
 		return ""
@@ -42,9 +43,30 @@ func HumanizeDBError(err error) string {
 		}
 	}
 
+	var mysqlErr *mysql.MySQLError
+	if errors.As(err, &mysqlErr) {
+		switch mysqlErr.Number {
+		case 1062:
+			return "Нарушено ограничение уникальности"
+		case 1451, 1452:
+			return "Невозможно выполнить операцию из-за связанных записей"
+		case 3819:
+			return "Данные не прошли проверку ограничений БД"
+		case 1406:
+			return "Один из текстовых параметров слишком длинный"
+		}
+	}
+
 	msg := err.Error()
-	if strings.Contains(strings.ToLower(msg), "duplicate") {
+	lower := strings.ToLower(msg)
+	if strings.Contains(lower, "duplicate") {
 		return "Нарушено ограничение уникальности"
+	}
+	if strings.Contains(lower, "foreign key") || strings.Contains(lower, "constraint fails") {
+		return "Невозможно выполнить операцию из-за связанных записей"
+	}
+	if strings.Contains(lower, "периоды назначения пересекаются") {
+		return "Периоды назначения пересекаются для выбранного автомобиля"
 	}
 
 	return "Ошибка базы данных: " + msg

@@ -13,19 +13,26 @@ type searchIndexData struct {
 }
 
 type searchVehiclesData struct {
-	BaseData models.BasePageData
-	Make     string
-	Rows     []map[string]string
-	Searched bool
+	BaseData   models.BasePageData
+	Make       string
+	Model      string
+	RegNumber  string
+	VIN        string
+	Models     []models.Option
+	RegNumbers []models.Option
+	VINs       []models.Option
+	Rows       []map[string]string
+	Searched   bool
 }
 
 type searchTripsData struct {
 	BaseData   models.BasePageData
 	DriverID   string
-	RegNumber  string
+	VehicleID  string
 	DateFrom   string
 	DateTo     string
 	Drivers    []models.Option
+	Vehicles   []models.Option
 	Rows       []map[string]string
 	HasResults bool
 	Searched   bool
@@ -64,12 +71,39 @@ func (a *App) SearchIndex(w http.ResponseWriter, r *http.Request) {
 // SearchVehiclesByMake поиск 1: автомобили по марке.
 func (a *App) SearchVehiclesByMake(w http.ResponseWriter, r *http.Request) {
 	makeValue := r.URL.Query().Get("make")
+	modelValue := r.URL.Query().Get("model")
+	regNumber := r.URL.Query().Get("reg_number")
+	vin := r.URL.Query().Get("vin")
 	rows := make([]map[string]string, 0)
-	searched := false
+	searched := makeValue != "" || modelValue != "" || regNumber != "" || vin != ""
 
-	if makeValue != "" {
-		searched = true
-		result, err := a.analyticsRepo.VehiclesByMake(r.Context(), makeValue)
+	_, analyticsRepo, _, err := a.repositoriesForRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	modelsList, err := analyticsRepo.ModelOptions(r.Context(), makeValue)
+	if err != nil {
+		a.logger.Printf("[search vehicle models] %v", err)
+		http.Error(w, "Ошибка загрузки моделей", http.StatusInternalServerError)
+		return
+	}
+	regNumbers, err := analyticsRepo.RegNumberOptions(r.Context(), makeValue, modelValue)
+	if err != nil {
+		a.logger.Printf("[search vehicle reg numbers] %v", err)
+		http.Error(w, "Ошибка загрузки госномеров", http.StatusInternalServerError)
+		return
+	}
+	vins, err := analyticsRepo.VINOptions(r.Context(), regNumber)
+	if err != nil {
+		a.logger.Printf("[search vehicle vins] %v", err)
+		http.Error(w, "Ошибка загрузки VIN", http.StatusInternalServerError)
+		return
+	}
+
+	if searched {
+		result, err := analyticsRepo.VehiclesByAttributes(r.Context(), makeValue, modelValue, regNumber, vin)
 		if err != nil {
 			a.logger.Printf("[search make] %v", err)
 			http.Error(w, "Ошибка выполнения поиска", http.StatusInternalServerError)
@@ -79,10 +113,16 @@ func (a *App) SearchVehiclesByMake(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := searchVehiclesData{
-		BaseData: a.baseData(w, r, "Поиск автомобилей по марке", "search"),
-		Make:     makeValue,
-		Rows:     rows,
-		Searched: searched,
+		BaseData:   a.baseData(w, r, "Поиск автомобилей", "search"),
+		Make:       makeValue,
+		Model:      modelValue,
+		RegNumber:  regNumber,
+		VIN:        vin,
+		Models:     modelsList,
+		RegNumbers: regNumbers,
+		VINs:       vins,
+		Rows:       rows,
+		Searched:   searched,
 	}
 
 	a.render(w, r, "search_vehicles_by_make.html", data)
@@ -92,17 +132,44 @@ func (a *App) SearchVehiclesByMake(w http.ResponseWriter, r *http.Request) {
 func (a *App) SearchTrips(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
-	drivers, err := a.analyticsRepo.DriverOptions(r.Context())
+	_, analyticsRepo, _, err := a.repositoriesForRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	drivers, err := analyticsRepo.DriverOptions(r.Context())
 	if err != nil {
 		a.logger.Printf("[search trips drivers] %v", err)
 		http.Error(w, "Ошибка загрузки водителей", http.StatusInternalServerError)
 		return
 	}
 
+	driverID := q.Get("driver_id")
+	vehicleID := q.Get("vehicle_id")
+	var driverPtr *int
+	if driverID != "" {
+		id, convErr := strconv.Atoi(driverID)
+		if convErr == nil {
+			driverPtr = &id
+		}
+	}
+	var vehiclePtr *int
+	if vehicleID != "" {
+		id, convErr := strconv.Atoi(vehicleID)
+		if convErr == nil {
+			vehiclePtr = &id
+		}
+	}
+
+	vehicles, err := analyticsRepo.VehicleOptionsFiltered(r.Context(), driverPtr, nil)
+	if err != nil {
+		a.logger.Printf("[search trips vehicles] %v", err)
+		http.Error(w, "Ошибка загрузки автомобилей", http.StatusInternalServerError)
+		return
+	}
+
 	dateFrom := parseDateOrDefault(q.Get("date_from"), "")
 	dateTo := parseDateOrDefault(q.Get("date_to"), "")
-	driverID := q.Get("driver_id")
-	regNumber := q.Get("reg_number")
 
 	rows := make([]map[string]string, 0)
 	searched := dateFrom != "" && dateTo != ""
@@ -119,15 +186,7 @@ func (a *App) SearchTrips(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		var driverPtr *int
-		if driverID != "" {
-			id, convErr := strconv.Atoi(driverID)
-			if convErr == nil {
-				driverPtr = &id
-			}
-		}
-
-		rows, err = a.analyticsRepo.TripSheetsByDriverVehiclePeriod(r.Context(), driverPtr, regNumber, start, end)
+		rows, err = analyticsRepo.TripSheetsByDriverVehiclePeriod(r.Context(), driverPtr, vehiclePtr, start, end)
 		if err != nil {
 			a.logger.Printf("[search trips] %v", err)
 			http.Error(w, "Ошибка выполнения поиска", http.StatusInternalServerError)
@@ -138,10 +197,11 @@ func (a *App) SearchTrips(w http.ResponseWriter, r *http.Request) {
 	data := searchTripsData{
 		BaseData:   a.baseData(w, r, "Поиск путевых листов", "search"),
 		DriverID:   driverID,
-		RegNumber:  regNumber,
+		VehicleID:  vehicleID,
 		DateFrom:   dateFrom,
 		DateTo:     dateTo,
 		Drivers:    drivers,
+		Vehicles:   vehicles,
 		Rows:       rows,
 		HasResults: len(rows) > 0,
 		Searched:   searched,
@@ -172,7 +232,12 @@ func (a *App) SearchMileage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		rows, err = a.analyticsRepo.TotalMileageByDriverVehicle(r.Context(), start, end)
+		_, analyticsRepo, _, err := a.repositoriesForRequest(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		rows, err = analyticsRepo.TotalMileageByDriverVehicle(r.Context(), start, end)
 		if err != nil {
 			a.logger.Printf("[search mileage] %v", err)
 			http.Error(w, "Ошибка выполнения поиска", http.StatusInternalServerError)
@@ -205,7 +270,12 @@ func (a *App) ReportMileage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := a.analyticsRepo.MileageReport(r.Context(), start, end)
+	_, analyticsRepo, _, err := a.repositoriesForRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	rows, err := analyticsRepo.MileageReport(r.Context(), start, end)
 	if err != nil {
 		a.logger.Printf("[report mileage] %v", err)
 		http.Error(w, "Ошибка формирования отчета", http.StatusInternalServerError)
@@ -229,7 +299,12 @@ func (a *App) ReportFuel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := a.analyticsRepo.FuelExpensesReport(r.Context(), start, end)
+	_, analyticsRepo, _, err := a.repositoriesForRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	rows, err := analyticsRepo.FuelExpensesReport(r.Context(), start, end)
 	if err != nil {
 		a.logger.Printf("[report fuel] %v", err)
 		http.Error(w, "Ошибка формирования отчета", http.StatusInternalServerError)
@@ -253,7 +328,12 @@ func (a *App) ReportMaintenance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := a.analyticsRepo.MaintenanceExpensesReport(r.Context(), start, end)
+	_, analyticsRepo, _, err := a.repositoriesForRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	rows, err := analyticsRepo.MaintenanceExpensesReport(r.Context(), start, end)
 	if err != nil {
 		a.logger.Printf("[report maintenance] %v", err)
 		http.Error(w, "Ошибка формирования отчета", http.StatusInternalServerError)
@@ -271,7 +351,12 @@ func (a *App) ReportMaintenance(w http.ResponseWriter, r *http.Request) {
 
 // ReportByStatus отчет по количеству авто по статусам.
 func (a *App) ReportByStatus(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.analyticsRepo.VehiclesByStatus(r.Context())
+	_, analyticsRepo, _, err := a.repositoriesForRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	rows, err := analyticsRepo.VehiclesByStatus(r.Context())
 	if err != nil {
 		a.logger.Printf("[report status] %v", err)
 		http.Error(w, "Ошибка формирования отчета", http.StatusInternalServerError)
@@ -287,7 +372,12 @@ func (a *App) ReportByStatus(w http.ResponseWriter, r *http.Request) {
 
 // ReportByClass отчет по количеству авто по классам.
 func (a *App) ReportByClass(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.analyticsRepo.VehiclesByClass(r.Context())
+	_, analyticsRepo, _, err := a.repositoriesForRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	rows, err := analyticsRepo.VehiclesByClass(r.Context())
 	if err != nil {
 		a.logger.Printf("[report class] %v", err)
 		http.Error(w, "Ошибка формирования отчета", http.StatusInternalServerError)
@@ -303,7 +393,12 @@ func (a *App) ReportByClass(w http.ResponseWriter, r *http.Request) {
 
 // ReportCurrentRentals отчет по текущим арендам.
 func (a *App) ReportCurrentRentals(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.analyticsRepo.CurrentRentals(r.Context())
+	_, analyticsRepo, _, err := a.repositoriesForRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	rows, err := analyticsRepo.CurrentRentals(r.Context())
 	if err != nil {
 		a.logger.Printf("[report rentals] %v", err)
 		http.Error(w, "Ошибка формирования отчета", http.StatusInternalServerError)
@@ -319,7 +414,12 @@ func (a *App) ReportCurrentRentals(w http.ResponseWriter, r *http.Request) {
 
 // ReportSummary сводный отчет по количеству записей.
 func (a *App) ReportSummary(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.analyticsRepo.DatabaseSummary(r.Context())
+	_, analyticsRepo, _, err := a.repositoriesForRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	rows, err := analyticsRepo.DatabaseSummary(r.Context())
 	if err != nil {
 		a.logger.Printf("[report summary] %v", err)
 		http.Error(w, "Ошибка формирования отчета", http.StatusInternalServerError)

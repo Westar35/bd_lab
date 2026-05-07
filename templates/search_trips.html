@@ -6,7 +6,7 @@
 <form method="get" class="filters-bar">
     <div class="filter-item">
         <label for="driver_id">Водитель</label>
-        <select id="driver_id" name="driver_id">
+        <select id="driver_id" name="driver_id" data-cascade-target="vehicle_id" data-cascade-url="/api/options/vehicles" data-cascade-param="driver_id">
             <option value="">Все водители</option>
             {{range .Drivers}}
                 <option value="{{.ID}}" {{if eq $.DriverID .ID}}selected{{end}}>{{.Label}}</option>
@@ -15,8 +15,13 @@
     </div>
 
     <div class="filter-item">
-        <label for="reg_number">Гос. номер автомобиля</label>
-        <input id="reg_number" name="reg_number" value="{{.RegNumber}}" placeholder="Например, А123ВС77">
+        <label for="vehicle_id">Автомобиль</label>
+        <select id="vehicle_id" name="vehicle_id">
+            <option value="">Все автомобили</option>
+            {{range .Vehicles}}
+                <option value="{{.ID}}" {{if eq $.VehicleID .ID}}selected{{end}}>{{.Label}}</option>
+            {{end}}
+        </select>
     </div>
 
     <div class="filter-item">

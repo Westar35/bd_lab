@@ -1,9 +1,15 @@
 package models
 
+import (
+	"fmt"
+	"strings"
+	"time"
+)
+
 // Option используется для select-полей.
 type Option struct {
-	ID    string
-	Label string
+	ID    string `json:"id"`
+	Label string `json:"label"`
 }
 
 // Field описывает поле сущности для списка/карточки/формы.
@@ -22,6 +28,12 @@ type Field struct {
 	RefLabelExpr  string
 	StaticOptions []Option
 	Placeholder   string
+	Help          string
+	Min           string
+	Max           string
+	Step          string
+	MaxLength     int
+	AddSlug       string
 }
 
 // EntityConfig описывает метаданные сущности для универсального CRUD.
@@ -30,11 +42,13 @@ type EntityConfig struct {
 	Table         string
 	Title         string
 	TitleSingle   string
+	Category      string
 	Fields        []Field
 	ListColumns   []string
 	SearchColumns []string
 	DefaultSort   string
 	DefaultDir    string
+	ReadOnly      bool
 }
 
 // FieldByName возвращает поле по имени.
@@ -71,7 +85,7 @@ func (e EntityConfig) DetailFields() []Field {
 
 // EntityMap возвращает конфигурации всех обязательных бизнес-сущностей.
 func EntityMap() map[string]EntityConfig {
-	return map[string]EntityConfig{
+	entities := map[string]EntityConfig{
 		"vehicles": {
 			Slug:          "vehicles",
 			Table:         "vehicle",
@@ -286,5 +300,174 @@ func EntityMap() map[string]EntityConfig {
 				{Name: "updated_at", Label: "Обновлено", Type: "datetime", InList: false, InDetail: true, InForm: false, Sortable: true},
 			},
 		},
+	}
+	for slug, cfg := range lookupEntityMap() {
+		entities[slug] = cfg
+	}
+	entities["audit-log"] = auditEntityConfig()
+	applyFieldHints(entities)
+	return entities
+}
+
+func lookupEntityMap() map[string]EntityConfig {
+	lookups := []struct {
+		slug  string
+		table string
+		title string
+		one   string
+	}{
+		{"vehicle-classes", "vehicle_class", "Классы автомобилей", "класс автомобиля"},
+		{"vehicle-statuses", "vehicle_status", "Статусы автомобилей", "статус автомобиля"},
+		{"fuel-types", "fuel_type", "Типы топлива", "тип топлива"},
+		{"transmission-types", "transmission_type", "Типы КПП", "тип КПП"},
+		{"acquisition-types", "acquisition_type", "Способы получения", "способ получения"},
+		{"maintenance-types", "maintenance_type", "Типы ТО/ремонта", "тип ТО/ремонта"},
+		{"payment-types", "payment_type", "Типы оплаты", "тип оплаты"},
+		{"contract-types", "contract_type", "Типы договоров", "тип договора"},
+		{"contract-statuses", "contract_status", "Статусы договоров", "статус договора"},
+	}
+
+	result := make(map[string]EntityConfig, len(lookups))
+	for _, item := range lookups {
+		result[item.slug] = EntityConfig{
+			Slug:          item.slug,
+			Table:         item.table,
+			Title:         item.title,
+			TitleSingle:   item.one,
+			Category:      "lookup",
+			ListColumns:   []string{"code", "name", "description"},
+			SearchColumns: []string{"code", "name", "description"},
+			DefaultSort:   "id",
+			DefaultDir:    "desc",
+			Fields: []Field{
+				{Name: "id", Label: "ID", Type: "int", InList: true, InDetail: true, InForm: false, Sortable: true},
+				{Name: "code", Label: "Код", Type: "text", Required: true, InList: true, InDetail: true, InForm: true, Sortable: true, Placeholder: "UNIQUE_CODE"},
+				{Name: "name", Label: "Название", Type: "text", Required: true, InList: true, InDetail: true, InForm: true, Sortable: true, Placeholder: "Название значения"},
+				{Name: "description", Label: "Описание", Type: "textarea", InList: true, InDetail: true, InForm: true, Placeholder: "Краткое описание"},
+			},
+		}
+	}
+	return result
+}
+
+func auditEntityConfig() EntityConfig {
+	return EntityConfig{
+		Slug:          "audit-log",
+		Table:         "audit_log",
+		Title:         "Журнал операций",
+		TitleSingle:   "запись журнала",
+		Category:      "audit",
+		ListColumns:   []string{"ts", "actor", "action", "entity", "entity_id"},
+		SearchColumns: []string{"actor", "action", "entity"},
+		DefaultSort:   "id",
+		DefaultDir:    "desc",
+		ReadOnly:      true,
+		Fields: []Field{
+			{Name: "id", Label: "ID", Type: "int", InList: true, InDetail: true, Sortable: true},
+			{Name: "ts", Label: "Дата/время", Type: "datetime", InList: true, InDetail: true, Filterable: true, Sortable: true},
+			{Name: "actor", Label: "Пользователь", Type: "text", InList: true, InDetail: true, Filterable: true, Sortable: true},
+			{Name: "action", Label: "Действие", Type: "text", InList: true, InDetail: true, Filterable: true, Sortable: true},
+			{Name: "entity", Label: "Таблица", Type: "text", InList: true, InDetail: true, Filterable: true, Sortable: true},
+			{Name: "entity_id", Label: "ID записи", Type: "int", InList: true, InDetail: true, Sortable: true},
+			{Name: "details_before", Label: "До", Type: "textarea", InDetail: true},
+			{Name: "details_after", Label: "После", Type: "textarea", InDetail: true},
+		},
+	}
+}
+
+func applyFieldHints(entities map[string]EntityConfig) {
+	maxYear := fmt.Sprint(time.Now().Year() + 1)
+	for slug, cfg := range entities {
+		for i := range cfg.Fields {
+			f := &cfg.Fields[i]
+			if f.Type == "text" || f.Type == "textarea" || f.Type == "email" {
+				switch f.Name {
+				case "vin":
+					f.Placeholder = "XTA210990Y2760000"
+					f.Help = "VIN должен содержать 17 символов"
+					f.MaxLength = 17
+				case "reg_number":
+					f.Placeholder = "А123ВС77"
+					f.Help = "Введите государственный номер автомобиля"
+					f.MaxLength = 20
+				case "fio":
+					f.Placeholder = "Иванов Иван Иванович"
+					f.MaxLength = 150
+				case "phone":
+					f.Placeholder = "+7 900 123-45-67"
+					f.MaxLength = 40
+				case "email":
+					f.Type = "email"
+					f.Placeholder = "client@example.com"
+					f.MaxLength = 120
+				case "number":
+					f.Placeholder = "RENT-2026-001"
+					f.MaxLength = 64
+				case "license_number":
+					f.Placeholder = "77АА123456"
+					f.MaxLength = 50
+				case "inn":
+					f.Placeholder = "7701001001"
+					f.MaxLength = 20
+				case "code":
+					if f.Placeholder == "" {
+						f.Placeholder = "UNIQUE_CODE"
+					}
+					f.MaxLength = 32
+				case "make":
+					f.Placeholder = "Toyota"
+					f.MaxLength = 64
+				case "model":
+					f.Placeholder = "Camry"
+					f.MaxLength = 64
+				case "name":
+					if f.Placeholder == "" {
+						f.Placeholder = "Название"
+					}
+					f.MaxLength = 128
+				case "service_name":
+					f.Placeholder = "ООО СервисМоторс"
+					f.MaxLength = 180
+				case "station":
+					f.Placeholder = "Лукойл"
+					f.MaxLength = 120
+				case "route":
+					f.Placeholder = "Москва - Подольск"
+					f.MaxLength = 255
+				case "purpose":
+					f.Placeholder = "Служебная поездка"
+					f.MaxLength = 255
+				}
+			}
+
+			switch f.Name {
+			case "year":
+				f.Placeholder = "2020"
+				f.Min = "1980"
+				f.Max = maxYear
+				f.Help = "Год выпуска: от 1980 до следующего календарного года"
+			case "current_odometer_km", "odometer_start", "odometer_end", "odometer_km", "distance_km":
+				f.Placeholder = "150000"
+				f.Min = "0"
+			case "acquisition_cost", "amount", "cost", "total_amount", "price_per_day", "deposit":
+				f.Placeholder = "2500000.00"
+				f.Min = "0"
+				f.Step = "0.01"
+			case "liters":
+				f.Placeholder = "45.50"
+				f.Min = "0.01"
+				f.Step = "0.01"
+			}
+
+			if strings.Contains(f.Name, "date") || strings.HasSuffix(f.Name, "_ts") {
+				if f.Type == "date" {
+					f.Help = "Введите дату в формате ГГГГ-ММ-ДД"
+				}
+				if f.Type == "datetime-local" {
+					f.Help = "Введите дату и время"
+				}
+			}
+		}
+		entities[slug] = cfg
 	}
 }

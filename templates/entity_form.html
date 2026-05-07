@@ -7,6 +7,10 @@
 {{end}}
 
 <form method="post" action="{{.Action}}" class="form-grid wide">
+    {{if .ReturnTo}}
+        <input type="hidden" name="_return_to" value="{{.ReturnTo}}">
+        <input type="hidden" name="_field" value="{{.ReturnField}}">
+    {{end}}
     {{range $field := .Fields}}
         <div class="form-field {{if eq $field.Type "checkbox"}}checkbox-field{{end}}">
             {{if eq $field.Type "checkbox"}}
@@ -18,17 +22,22 @@
                 <label for="{{$field.Name}}">
                     {{$field.Label}}{{if $field.Required}} *{{end}}
                 </label>
-                <textarea id="{{$field.Name}}" name="{{$field.Name}}" rows="3" {{if $field.Required}}required{{end}}>{{index $.Values $field.Name}}</textarea>
+                <textarea id="{{$field.Name}}" name="{{$field.Name}}" rows="3" placeholder="{{$field.Placeholder}}" {{if $field.MaxLength}}maxlength="{{$field.MaxLength}}"{{end}} {{if $field.Required}}required{{end}}>{{index $.Values $field.Name}}</textarea>
             {{else if eq $field.Type "select"}}
                 <label for="{{$field.Name}}">
                     {{$field.Label}}{{if $field.Required}} *{{end}}
                 </label>
-                <select id="{{$field.Name}}" name="{{$field.Name}}" {{if $field.Required}}required{{end}}>
-                    <option value="">{{if $field.Required}}Выберите значение{{else}}Не выбрано{{end}}</option>
-                    {{range $opt := index $.Selects $field.Name}}
-                        <option value="{{$opt.ID}}" {{if eq $opt.ID (index $.Values $field.Name)}}selected{{end}}>{{$opt.Label}}</option>
+                <div class="select-with-add">
+                    <select id="{{$field.Name}}" name="{{$field.Name}}" {{if $field.Required}}required{{end}}>
+                        <option value="">{{if $field.Required}}Выберите значение{{else}}Не выбрано{{end}}</option>
+                        {{range $opt := index $.Selects $field.Name}}
+                            <option value="{{$opt.ID}}" {{if eq $opt.ID (index $.Values $field.Name)}}selected{{end}}>{{$opt.Label}}</option>
+                        {{end}}
+                    </select>
+                    {{if index $.RelatedSlugs $field.Name}}
+                        <a class="btn btn-light add-related" href="/{{index $.RelatedSlugs $field.Name}}/new?return_to={{$.CurrentPath}}&field={{$field.Name}}" title="Создать связанную запись">+</a>
                     {{end}}
-                </select>
+                </div>
             {{else}}
                 <label for="{{$field.Name}}">
                     {{$field.Label}}{{if $field.Required}} *{{end}}
@@ -36,12 +45,19 @@
                 <input
                     id="{{$field.Name}}"
                     name="{{$field.Name}}"
-                    type="{{if eq $field.Type "decimal"}}number{{else if eq $field.Type "int"}}number{{else if eq $field.Type "datetime-local"}}datetime-local{{else if eq $field.Type "date"}}date{{else}}text{{end}}"
-                    {{if or (eq $field.Type "decimal") (eq $field.Type "int")}}step="{{if eq $field.Type "decimal"}}0.01{{else}}1{{end}}"{{end}}
+                    type="{{if eq $field.Type "decimal"}}number{{else if eq $field.Type "int"}}number{{else if eq $field.Type "datetime-local"}}datetime-local{{else if eq $field.Type "date"}}date{{else if eq $field.Type "email"}}email{{else}}text{{end}}"
+                    {{if eq $field.Type "decimal"}}step="{{if $field.Step}}{{$field.Step}}{{else}}0.01{{end}}"{{else if eq $field.Type "int"}}step="{{if $field.Step}}{{$field.Step}}{{else}}1{{end}}"{{end}}
+                    {{if $field.Min}}min="{{$field.Min}}"{{end}}
+                    {{if $field.Max}}max="{{$field.Max}}"{{end}}
+                    {{if $field.MaxLength}}maxlength="{{$field.MaxLength}}"{{end}}
                     value="{{index $.Values $field.Name}}"
                     placeholder="{{$field.Placeholder}}"
                     {{if $field.Required}}required{{end}}
                 >
+            {{end}}
+
+            {{if $field.Help}}
+                <div class="field-help">{{$field.Help}}</div>
             {{end}}
 
             {{if index $.Errors $field.Name}}

@@ -3,6 +3,8 @@ package middleware
 import (
 	"net/http"
 
+	dbx "bd_lab_3/internal/db"
+
 	"github.com/gorilla/sessions"
 )
 
@@ -102,4 +104,22 @@ func (m *AuthMiddleware) PullFlash(w http.ResponseWriter, r *http.Request) strin
 		return msg
 	}
 	return ""
+}
+
+func (m *AuthMiddleware) ActiveDB(r *http.Request, fallback dbx.DBType) dbx.DBType {
+	sess, err := m.session(r)
+	if err != nil {
+		return fallback
+	}
+	value, _ := sess.Values["active_db"].(string)
+	return dbx.ParseDBType(value, fallback)
+}
+
+func (m *AuthMiddleware) SetActiveDB(w http.ResponseWriter, r *http.Request, activeDB dbx.DBType) error {
+	sess, err := m.session(r)
+	if err != nil {
+		return err
+	}
+	sess.Values["active_db"] = string(activeDB)
+	return sess.Save(r, w)
 }

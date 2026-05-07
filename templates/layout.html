@@ -15,6 +15,16 @@
             <p class="subtitle">Учебная система учета транспорта</p>
         </div>
         <div class="user-box">
+            <form method="post" action="/switch-db" class="db-switcher">
+                <span>Активная БД: <strong>{{.BaseData.ActiveDBName}}</strong></span>
+                {{if eq .BaseData.ActiveDB "postgres"}}
+                    <input type="hidden" name="db" value="mysql">
+                    <button type="submit" class="btn btn-light">MySQL</button>
+                {{else}}
+                    <input type="hidden" name="db" value="postgres">
+                    <button type="submit" class="btn btn-light">PostgreSQL</button>
+                {{end}}
+            </form>
             <span>Пользователь: <strong>{{.BaseData.Username}}</strong></span>
             <form method="post" action="/logout">
                 <button type="submit" class="btn btn-light">Выйти</button>

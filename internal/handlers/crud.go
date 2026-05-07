@@ -18,9 +18,14 @@ func (a *App) EntityList(slug string) http.HandlerFunc {
 			a.notFound(w, r)
 			return
 		}
+		entityRepo, _, _, err := a.repositoriesForRequest(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 
 		params := a.parseListParams(r, entity)
-		result, err := a.entityRepo.List(r.Context(), entity, params)
+		result, err := entityRepo.List(r.Context(), entity, params)
 		if err != nil {
 			a.logger.Printf("[list] %s: %v", entity.Table, err)
 			http.Error(w, "Ошибка загрузки списка", http.StatusInternalServerError)
@@ -48,13 +53,15 @@ func (a *App) EntityList(slug string) http.HandlerFunc {
 					{ID: "true", Label: "Да"},
 					{ID: "false", Label: "Нет"},
 				}
-			default:
-				opts, err := a.entityRepo.SelectOptions(r.Context(), f)
+			case "select":
+				opts, err := entityRepo.SelectOptions(r.Context(), f)
 				if err != nil {
 					a.logger.Printf("[filters] %s/%s: %v", entity.Table, f.Name, err)
 					continue
 				}
 				filterSets[f.Name] = opts
+			default:
+				continue
 			}
 		}
 
@@ -91,6 +98,10 @@ func (a *App) EntityCreatePage(slug string) http.HandlerFunc {
 			a.notFound(w, r)
 			return
 		}
+		if entity.ReadOnly {
+			http.Error(w, "Эта таблица доступна только для просмотра", http.StatusForbidden)
+			return
+		}
 
 		selects, err := a.selectSets(r, entity)
 		if err != nil {
@@ -100,15 +111,19 @@ func (a *App) EntityCreatePage(slug string) http.HandlerFunc {
 		}
 
 		data := models.FormPageData{
-			BaseData:    a.baseData(w, r, "Создание: "+entity.TitleSingle, slug),
-			Entity:      entity,
-			Fields:      entity.FormFields(),
-			Values:      map[string]string{},
-			Errors:      map[string]string{},
-			Selects:     selects,
-			Action:      "/" + slug + "/new",
-			SubmitLabel: "Создать",
-			IsEdit:      false,
+			BaseData:     a.baseData(w, r, "Создание: "+entity.TitleSingle, slug),
+			Entity:       entity,
+			Fields:       entity.FormFields(),
+			Values:       draftValues(r, entity.FormFields()),
+			Errors:       map[string]string{},
+			Selects:      selects,
+			RelatedSlugs: relatedSlugs(entity),
+			Action:       "/" + slug + "/new",
+			CurrentPath:  "/" + slug + "/new",
+			ReturnTo:     returnToWithDraft(r),
+			ReturnField:  r.URL.Query().Get("field"),
+			SubmitLabel:  "Создать",
+			IsEdit:       false,
 		}
 
 		a.render(w, r, "entity_form.html", data)
@@ -123,6 +138,10 @@ func (a *App) EntityCreate(slug string) http.HandlerFunc {
 			a.notFound(w, r)
 			return
 		}
+		if entity.ReadOnly {
+			http.Error(w, "Эта таблица доступна только для просмотра", http.StatusForbidden)
+			return
+		}
 
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "Некорректные данные формы", http.StatusBadRequest)
@@ -135,14 +154,23 @@ func (a *App) EntityCreate(slug string) http.HandlerFunc {
 			return
 		}
 
+		entityRepo, _, _, err := a.repositoriesForRequest(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		actor, _ := a.authMW.CurrentUser(r)
-		_, err := a.entityRepo.Create(r.Context(), entity, parsed, actor)
+		createdID, err := entityRepo.Create(r.Context(), entity, parsed, actor)
 		if err != nil {
 			valErrs["_form"] = services.HumanizeDBError(err)
 			a.renderFormWithErrors(w, r, entity, raw, valErrs, false, "", "/"+slug+"/new")
 			return
 		}
 
+		if returnTo := r.FormValue("_return_to"); returnTo != "" {
+			a.redirectWithFlash(w, r, appendQuery(returnTo, "selected_"+r.FormValue("_field"), fmt.Sprint(createdID)), "Связанная запись создана")
+			return
+		}
 		a.redirectWithFlash(w, r, "/"+slug, "Запись успешно создана")
 	}
 }
@@ -155,14 +183,18 @@ func (a *App) EntityDetail(slug string) http.HandlerFunc {
 			a.notFound(w, r)
 			return
 		}
-
 		id, err := a.parseID(r)
 		if err != nil {
 			http.NotFound(w, r)
 			return
 		}
 
-		row, err := a.entityRepo.GetByID(r.Context(), entity, id)
+		entityRepo, _, _, err := a.repositoriesForRequest(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		row, err := entityRepo.GetByID(r.Context(), entity, id)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				http.NotFound(w, r)
@@ -192,6 +224,10 @@ func (a *App) EntityEditPage(slug string) http.HandlerFunc {
 			a.notFound(w, r)
 			return
 		}
+		if entity.ReadOnly {
+			http.Error(w, "Эта таблица доступна только для просмотра", http.StatusForbidden)
+			return
+		}
 
 		id, err := a.parseID(r)
 		if err != nil {
@@ -199,7 +235,12 @@ func (a *App) EntityEditPage(slug string) http.HandlerFunc {
 			return
 		}
 
-		row, err := a.entityRepo.GetRawByID(r.Context(), entity, id)
+		entityRepo, _, _, err := a.repositoriesForRequest(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		row, err := entityRepo.GetRawByID(r.Context(), entity, id)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				http.NotFound(w, r)
@@ -214,6 +255,11 @@ func (a *App) EntityEditPage(slug string) http.HandlerFunc {
 		for _, f := range entity.FormFields() {
 			values[f.Name] = services.FormatDBValueForInput(f, row[f.Name])
 		}
+		for key, value := range draftValues(r, entity.FormFields()) {
+			if value != "" {
+				values[key] = value
+			}
+		}
 
 		selects, err := a.selectSets(r, entity)
 		if err != nil {
@@ -223,16 +269,18 @@ func (a *App) EntityEditPage(slug string) http.HandlerFunc {
 		}
 
 		data := models.FormPageData{
-			BaseData:    a.baseData(w, r, "Редактирование: "+entity.TitleSingle, slug),
-			Entity:      entity,
-			Fields:      entity.FormFields(),
-			Values:      values,
-			Errors:      map[string]string{},
-			Selects:     selects,
-			Action:      fmt.Sprintf("/%s/%d/edit", slug, id),
-			SubmitLabel: "Сохранить",
-			IsEdit:      true,
-			ID:          fmt.Sprint(id),
+			BaseData:     a.baseData(w, r, "Редактирование: "+entity.TitleSingle, slug),
+			Entity:       entity,
+			Fields:       entity.FormFields(),
+			Values:       values,
+			Errors:       map[string]string{},
+			Selects:      selects,
+			RelatedSlugs: relatedSlugs(entity),
+			Action:       fmt.Sprintf("/%s/%d/edit", slug, id),
+			CurrentPath:  fmt.Sprintf("/%s/%d/edit", slug, id),
+			SubmitLabel:  "Сохранить",
+			IsEdit:       true,
+			ID:           fmt.Sprint(id),
 		}
 
 		a.render(w, r, "entity_form.html", data)
@@ -245,6 +293,10 @@ func (a *App) EntityEdit(slug string) http.HandlerFunc {
 		entity, ok := a.getEntity(slug)
 		if !ok {
 			a.notFound(w, r)
+			return
+		}
+		if entity.ReadOnly {
+			http.Error(w, "Эта таблица доступна только для просмотра", http.StatusForbidden)
 			return
 		}
 
@@ -266,8 +318,13 @@ func (a *App) EntityEdit(slug string) http.HandlerFunc {
 			return
 		}
 
+		entityRepo, _, _, err := a.repositoriesForRequest(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		actor, _ := a.authMW.CurrentUser(r)
-		err = a.entityRepo.Update(r.Context(), entity, id, parsed, actor)
+		err = entityRepo.Update(r.Context(), entity, id, parsed, actor)
 		if err != nil {
 			valErrs["_form"] = services.HumanizeDBError(err)
 			a.renderFormWithErrors(w, r, entity, raw, valErrs, true, fmt.Sprint(id), action)
@@ -286,6 +343,10 @@ func (a *App) EntityDeletePage(slug string) http.HandlerFunc {
 			a.notFound(w, r)
 			return
 		}
+		if entity.ReadOnly {
+			http.Error(w, "Эта таблица доступна только для просмотра", http.StatusForbidden)
+			return
+		}
 
 		id, err := a.parseID(r)
 		if err != nil {
@@ -293,7 +354,12 @@ func (a *App) EntityDeletePage(slug string) http.HandlerFunc {
 			return
 		}
 
-		row, err := a.entityRepo.GetByID(r.Context(), entity, id)
+		entityRepo, _, _, err := a.repositoriesForRequest(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		row, err := entityRepo.GetByID(r.Context(), entity, id)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				http.NotFound(w, r)
@@ -323,6 +389,10 @@ func (a *App) EntityDelete(slug string) http.HandlerFunc {
 			a.notFound(w, r)
 			return
 		}
+		if entity.ReadOnly {
+			http.Error(w, "Эта таблица доступна только для просмотра", http.StatusForbidden)
+			return
+		}
 
 		id, err := a.parseID(r)
 		if err != nil {
@@ -330,8 +400,13 @@ func (a *App) EntityDelete(slug string) http.HandlerFunc {
 			return
 		}
 
+		entityRepo, _, _, err := a.repositoriesForRequest(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		actor, _ := a.authMW.CurrentUser(r)
-		err = a.entityRepo.Delete(r.Context(), entity, id, actor)
+		err = entityRepo.Delete(r.Context(), entity, id, actor)
 		if err != nil {
 			a.logger.Printf("[delete] %s/%d: %v", entity.Table, id, err)
 			a.redirectWithFlash(w, r, "/"+slug, services.HumanizeDBError(err))
@@ -367,29 +442,37 @@ func (a *App) renderFormWithErrors(
 	}
 
 	data := models.FormPageData{
-		BaseData:    a.baseData(w, r, title, entity.Slug),
-		Entity:      entity,
-		Fields:      entity.FormFields(),
-		Values:      values,
-		Errors:      errs,
-		Selects:     selects,
-		Action:      action,
-		SubmitLabel: submit,
-		IsEdit:      isEdit,
-		ID:          id,
+		BaseData:     a.baseData(w, r, title, entity.Slug),
+		Entity:       entity,
+		Fields:       entity.FormFields(),
+		Values:       values,
+		Errors:       errs,
+		Selects:      selects,
+		RelatedSlugs: relatedSlugs(entity),
+		Action:       action,
+		CurrentPath:  action,
+		ReturnTo:     r.FormValue("_return_to"),
+		ReturnField:  r.FormValue("_field"),
+		SubmitLabel:  submit,
+		IsEdit:       isEdit,
+		ID:           id,
 	}
 
 	a.render(w, r, "entity_form.html", data)
 }
 
 func (a *App) selectSets(r *http.Request, entity models.EntityConfig) (map[string][]models.Option, error) {
+	entityRepo, _, _, err := a.repositoriesForRequest(r)
+	if err != nil {
+		return nil, err
+	}
 	result := make(map[string][]models.Option)
 	for _, f := range entity.FormFields() {
 		if f.Type != "select" {
 			continue
 		}
 
-		opts, err := a.entityRepo.SelectOptions(r.Context(), f)
+		opts, err := entityRepo.SelectOptions(r.Context(), f)
 		if err != nil {
 			return nil, err
 		}

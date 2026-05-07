@@ -1,5 +1,7 @@
 package models
 
+import "html/template"
+
 // NavItem элемент меню.
 type NavItem struct {
 	Name   string
@@ -9,13 +11,15 @@ type NavItem struct {
 
 // BasePageData общие данные для шаблонов.
 type BasePageData struct {
-	Title      string
-	ActiveMenu string
-	Username   string
-	Auth       bool
-	Flash      string
-	Error      string
-	NavItems   []NavItem
+	Title        string
+	ActiveMenu   string
+	Username     string
+	Auth         bool
+	ActiveDB     string
+	ActiveDBName string
+	Flash        string
+	Error        string
+	NavItems     []NavItem
 }
 
 // ListQuery параметры списка.
@@ -39,22 +43,26 @@ type ListPageData struct {
 	PageNumbers []int
 	ListFields  []Field
 	FilterSets  map[string][]Option
-	QueryTail   string
-	FilterTail  string
+	QueryTail   template.URL
+	FilterTail  template.URL
 }
 
 // FormPageData данные формы создания/редактирования.
 type FormPageData struct {
-	BaseData    BasePageData
-	Entity      EntityConfig
-	Fields      []Field
-	Values      map[string]string
-	Errors      map[string]string
-	Selects     map[string][]Option
-	Action      string
-	SubmitLabel string
-	IsEdit      bool
-	ID          string
+	BaseData     BasePageData
+	Entity       EntityConfig
+	Fields       []Field
+	Values       map[string]string
+	Errors       map[string]string
+	Selects      map[string][]Option
+	RelatedSlugs map[string]string
+	Action       string
+	CurrentPath  string
+	ReturnTo     string
+	ReturnField  string
+	SubmitLabel  string
+	IsEdit       bool
+	ID           string
 }
 
 // DetailPageData данные карточки сущности.

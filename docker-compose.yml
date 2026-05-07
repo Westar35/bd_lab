@@ -1,31 +1,54 @@
-version: "3.9"
-
 services:
-  db:
+  postgres:
     image: postgres:16
-    container_name: fleet_db
+    container_name: fleet_postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: fleet_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: "Fgrths197+"
+      POSTGRES_USER: fleet_user
+      POSTGRES_PASSWORD: fleet_password
       TZ: Europe/Moscow
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d fleet_db"]
+      test: ["CMD-SHELL", "pg_isready -U fleet_user -d fleet_db"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
+
+  mysql:
+    image: mysql:8.4
+    container_name: fleet_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: fleet_db
+      MYSQL_USER: fleet_user
+      MYSQL_PASSWORD: fleet_password
+      MYSQL_ROOT_PASSWORD: fleet_root_password
+      TZ: Europe/Moscow
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u fleet_user -pfleet_password --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
 
   app:
     build: .
     container_name: fleet_app
     restart: unless-stopped
     depends_on:
-      db:
+      postgres:
+        condition: service_healthy
+      mysql:
         condition: service_healthy
     environment:
       APP_HOST: 0.0.0.0
@@ -34,16 +57,25 @@ services:
       SESSION_KEY: super_secret_session_key_for_docker_123456
       ADMIN_USERNAME: admin
       ADMIN_PASSWORD: admin123
-      DB_HOST: db
-      DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: "Fgrths197+"
-      DB_NAME: fleet_db
-      DB_SSLMODE: disable
+      DEFAULT_DB: postgres
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: fleet_db
+      POSTGRES_USER: fleet_user
+      POSTGRES_PASSWORD: fleet_password
+      POSTGRES_SSLMODE: disable
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: fleet_db
+      MYSQL_USER: fleet_user
+      MYSQL_PASSWORD: fleet_password
+      MYSQL_PARSE_TIME: "true"
+      MYSQL_LOC: Local
       AUTO_MIGRATE: "true"
       AUTO_SEED: "true"
     ports:
       - "8080:8080"
 
 volumes:
-  pgdata:
+  postgres_data:
+  mysql_data:

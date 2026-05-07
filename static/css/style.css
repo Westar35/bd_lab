@@ -69,6 +69,13 @@ a:hover {
     gap: 12px;
 }
 
+.db-switcher {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+}
+
 .main-nav {
     display: flex;
     flex-wrap: wrap;
@@ -271,6 +278,23 @@ textarea {
 .field-error {
     color: var(--danger);
     font-size: 13px;
+}
+
+.field-help {
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.select-with-add {
+    display: grid;
+    grid-template-columns: 1fr 40px;
+    gap: 8px;
+    align-items: center;
+}
+
+.select-with-add .btn {
+    height: 38px;
+    font-size: 20px;
 }
 
 .table-wrap {

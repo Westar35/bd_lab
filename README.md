@@ -1,355 +1,177 @@
-# Учёт автопарка (Go + PostgreSQL)
+# Учёт автопарка
 
-Веб-приложение для учебной предметной области **«Учёт автопарка»** (дисциплина «Базы данных»).  
-Приложение реализовано как серверный SSR-сайт на Go и PostgreSQL, с обязательными CRUD-операциями, поиском, отчётами, миграциями, seed-данными и запуском через Docker.
+Учебное server-rendered web-приложение на Go для лабораторной работы по базам данных. Система ведёт автомобили, водителей, подразделения, путевые листы, заправки, обслуживание, контрагентов, договоры и аренду.
+
+Приложение работает с двумя СУБД:
+
+- PostgreSQL;
+- MySQL.
+
+Активная СУБД выбирается в web-интерфейсе без перезапуска приложения. Все CRUD-страницы, поиски, отчёты и JSON endpoints используют выбранную пользователем базу.
 
 ## Стек
-- Go 1.22+
-- PostgreSQL 16+
-- `chi` (роутер)
-- `html/template` (SSR-шаблоны)
-- `database/sql` + `pgx` driver
-- Docker + Docker Compose
 
-## Основные возможности
-- Авторизация (login/logout, cookie-session, один администратор из env)
-- Главная страница с навигацией по всем разделам
-- Полный CRUD для сущностей:
-  - `vehicle`
-  - `driver`
-  - `department`
-  - `vehicle_assignment`
-  - `trip_sheet`
-  - `fuel_txn`
-  - `maintenance_order`
-  - `counterparty`
-  - `contract`
-  - `rental_event`
-- Списки с пагинацией, сортировкой, фильтрами и текстовым поиском
-- 3 обязательных поисковых запроса:
-  1. Автомобили по марке
-  2. Путевые листы по водителю + автомобилю + периоду
-  3. Суммарный пробег по водителям и автомобилям за период
-- Отчёты:
-  - Пробег за период
-  - Расходы на топливо за период
-  - Расходы на обслуживание/ремонт за период
-  - Автомобили по статусам
-  - Автомобили по классам
-  - Текущие аренды
-  - Сводка базы
-- Страница справки/о проекте
-- Аудит-лог операций INSERT/UPDATE/DELETE (application-level)
+- Go 1.24;
+- `chi` router;
+- `html/template`;
+- `database/sql`;
+- PostgreSQL через `pgx`;
+- MySQL через `github.com/go-sql-driver/mysql`;
+- server-rendered HTML, CSS и небольшой JavaScript.
 
-## Структура проекта
-```text
-.
-├─ main.go
-├─ go.mod
-├─ go.sum
-├─ .env.example
-├─ README.md
-├─ Dockerfile
-├─ docker-compose.yml
-├─ migrations/
-├─ seeds/
-├─ static/
-├─ templates/
-└─ internal/
-   ├─ config/
-   ├─ db/
-   ├─ handlers/
-   ├─ middleware/
-   ├─ models/
-   ├─ repositories/
-   ├─ services/
-   └─ views/
-```
+## Быстрый запуск через Docker
 
-## Переменные окружения
-Скопируйте пример и при необходимости измените:
-
-```bash
-cp .env.example .env
-```
-
-Ключевые переменные:
-- `APP_HOST`, `APP_PORT`, `APP_ENV`
-- `SESSION_KEY`
-- `ADMIN_USERNAME`, `ADMIN_PASSWORD`
-- `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_SSLMODE`
-- `DATABASE_URL` (опционально, вместо отдельных DB-параметров)
-- `AUTO_MIGRATE`, `AUTO_SEED`
-
-## Локальный запуск (без Docker)
-1. Поднимите PostgreSQL и создайте БД (по умолчанию `fleet_db`).
-2. Настройте `.env`.
-   Используйте параметры БД:
-   - `DB_HOST=localhost`
-   - `DB_PORT=5432`
-   - `DB_USER=postgres`
-   - `DB_PASSWORD=Fgrths197+`
-   - `DB_NAME=fleet_db`
-3. Выполните:
-
-```bash
-go mod tidy
-go run main.go migrate
-go run main.go seed
-go run main.go
-```
-
-После запуска приложение доступно по адресу: `http://localhost:8080`.
-
-## Команды приложения
-- Запуск сервера: `go run main.go` или `go run main.go serve`
-- Только миграции: `go run main.go migrate`
-- Только seed-данные: `go run main.go seed`
-
-## Docker запуск
-```bash
+```powershell
 docker compose up --build
 ```
 
-По умолчанию в `docker-compose.yml`:
-- `AUTO_MIGRATE=true`
-- `AUTO_SEED=true`
+Compose поднимает три сервиса:
 
-Это означает, что при первом старте схема и демо-данные загрузятся автоматически.
+- `app` на `http://localhost:8080`;
+- `postgres` на `localhost:5432`;
+- `mysql` на `localhost:3306`.
 
-Приложение: `http://localhost:8080`
+При старте контейнера приложения выполняются миграции и seed-данные для обеих СУБД.
 
-## Учетные данные по умолчанию
-- Логин: `admin`
-- Пароль: `admin123`
+Данные для входа:
 
-(Изменяются через `ADMIN_USERNAME` / `ADMIN_PASSWORD`)
-
-## Seed-данные
-В `seeds/001_seed.sql` включены реалистичные данные:
-- 60 автомобилей (минимум по ТЗ: 50)
-- заполненные справочники
-- водители, подразделения, контрагенты
-- назначения, путевые листы, топливные операции
-- обслуживание, договоры, события аренды
-
-## Карта страниц
-- `/` — главная
-- `/login` — вход
-- CRUD-разделы:
-  - `/vehicles`
-  - `/drivers`
-  - `/departments`
-  - `/assignments`
-  - `/trip-sheets`
-  - `/fuel-txns`
-  - `/maintenance-orders`
-  - `/counterparties`
-  - `/contracts`
-  - `/rental-events`
-- Поиск:
-  - `/search`
-  - `/search/vehicles-by-make`
-  - `/search/trips`
-  - `/search/mileage`
-- Отчёты:
-  - `/reports`
-  - `/reports/mileage`
-  - `/reports/fuel`
-  - `/reports/maintenance`
-  - `/reports/by-status`
-  - `/reports/by-class`
-  - `/reports/current-rentals`
-  - `/reports/summary`
-- `/help` — справка
-
-## Развертывание на Linux сервере
-Рекомендуемый путь:
-1. Скопировать репозиторий на сервер.
-2. Настроить env (`ADMIN_*`, `SESSION_KEY`, параметры БД).
-3. Запустить `docker compose up -d --build`.
-4. Проксировать порт приложения (например, через Nginx).
-5. Использовать volume `pgdata` для постоянного хранения данных БД.
-
-## Ограничения
-- Реализована минимальная модель авторизации: один администратор из env.
-- RBAC (admin/viewer) не выделен в отдельную подсистему.
-
-
-# Учёт автопарка (Go + PostgreSQL)
-
-Веб-приложение для учебной предметной области **«Учёт автопарка»** (дисциплина «Базы данных»).  
-Приложение реализовано как серверный SSR-сайт на Go и PostgreSQL, с обязательными CRUD-операциями, поиском, отчётами, миграциями, seed-данными и запуском через Docker.
-
-## Стек
-- Go 1.22+
-- PostgreSQL 16+
-- `chi` (роутер)
-- `html/template` (SSR-шаблоны)
-- `database/sql` + `pgx` driver
-- Docker + Docker Compose
-
-## Основные возможности
-- Авторизация (login/logout, cookie-session, один администратор из env)
-- Главная страница с навигацией по всем разделам
-- Полный CRUD для сущностей:
-  - `vehicle`
-  - `driver`
-  - `department`
-  - `vehicle_assignment`
-  - `trip_sheet`
-  - `fuel_txn`
-  - `maintenance_order`
-  - `counterparty`
-  - `contract`
-  - `rental_event`
-- Списки с пагинацией, сортировкой, фильтрами и текстовым поиском
-- 3 обязательных поисковых запроса:
-  1. Автомобили по марке
-  2. Путевые листы по водителю + автомобилю + периоду
-  3. Суммарный пробег по водителям и автомобилям за период
-- Отчёты:
-  - Пробег за период
-  - Расходы на топливо за период
-  - Расходы на обслуживание/ремонт за период
-  - Автомобили по статусам
-  - Автомобили по классам
-  - Текущие аренды
-  - Сводка базы
-- Страница справки/о проекте
-- Аудит-лог операций INSERT/UPDATE/DELETE (application-level)
-
-## Структура проекта
 ```text
-.
-├─ main.go
-├─ go.mod
-├─ go.sum
-├─ .env.example
-├─ README.md
-├─ Dockerfile
-├─ docker-compose.yml
-├─ migrations/
-├─ seeds/
-├─ static/
-├─ templates/
-└─ internal/
-   ├─ config/
-   ├─ db/
-   ├─ handlers/
-   ├─ middleware/
-   ├─ models/
-   ├─ repositories/
-   ├─ services/
-   └─ views/
+Логин: admin
+Пароль: admin123
 ```
 
-## Переменные окружения
-Скопируйте пример и при необходимости измените:
+## Локальный запуск без Docker
 
-```bash
-cp .env.example .env
+1. Создайте `.env`:
+
+```powershell
+Copy-Item .env.example .env
 ```
 
-Ключевые переменные:
-- `APP_HOST`, `APP_PORT`, `APP_ENV`
-- `SESSION_KEY`
-- `ADMIN_USERNAME`, `ADMIN_PASSWORD`
-- `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_SSLMODE`
-- `DATABASE_URL` (опционально, вместо отдельных DB-параметров)
-- `AUTO_MIGRATE`, `AUTO_SEED`
+2. Поднимите PostgreSQL и MySQL локально.
 
-## Локальный запуск (без Docker)
-1. Поднимите PostgreSQL и создайте БД (по умолчанию `fleet_db`).
-2. Настройте `.env`.
-   Используйте параметры БД:
-   - `DB_HOST=localhost`
-   - `DB_PORT=5432`
-   - `DB_USER=postgres`
-   - `DB_PASSWORD=Fgrths197+`
-   - `DB_NAME=fleet_db`
-3. Выполните:
+3. Создайте базы и пользователя, если они ещё не созданы.
 
-```bash
-go mod tidy
+PostgreSQL:
+
+```sql
+CREATE USER fleet_user WITH PASSWORD 'fleet_password';
+CREATE DATABASE fleet_db OWNER fleet_user;
+```
+
+MySQL:
+
+```sql
+CREATE DATABASE fleet_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'fleet_user'@'%' IDENTIFIED BY 'fleet_password';
+GRANT ALL PRIVILEGES ON fleet_db.* TO 'fleet_user'@'%';
+FLUSH PRIVILEGES;
+```
+
+4. Примените миграции и seed-данные:
+
+```powershell
 go run main.go migrate
 go run main.go seed
+```
+
+5. Запустите приложение:
+
+```powershell
 go run main.go
 ```
 
-После запуска приложение доступно по адресу: `http://localhost:8080`.
+Откройте `http://localhost:8080`.
 
-## Команды приложения
-- Запуск сервера: `go run main.go` или `go run main.go serve`
-- Только миграции: `go run main.go migrate`
-- Только seed-данные: `go run main.go seed`
+## Настройки окружения
 
-## Docker запуск
-```bash
+Основные переменные находятся в `.env.example`.
+
+```env
+DEFAULT_DB=postgres
+
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=fleet_db
+POSTGRES_USER=fleet_user
+POSTGRES_PASSWORD=fleet_password
+POSTGRES_SSLMODE=disable
+
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_DATABASE=fleet_db
+MYSQL_USER=fleet_user
+MYSQL_PASSWORD=fleet_password
+MYSQL_PARSE_TIME=true
+MYSQL_LOC=Local
+```
+
+Для PostgreSQL сохранена совместимость со старыми `DB_*` переменными. Если указаны `POSTGRES_URL` или `MYSQL_URL`, они имеют приоритет над отдельными параметрами подключения.
+
+## Миграции и seed-данные
+
+PostgreSQL:
+
+- `migrations/001_init.sql`;
+- `seeds/001_seed.sql`.
+
+MySQL:
+
+- `migrations/mysql/001_init.sql`;
+- `seeds/mysql/001_seed.sql`.
+
+Seed содержит справочники, 60 автомобилей, 20 водителей, подразделения, путевые листы, заправки, ремонты, контрагентов, договоры и события аренды.
+
+## Переключение СУБД
+
+После входа в верхней панели отображается активная база:
+
+```text
+Активная БД: PostgreSQL
+```
+
+Рядом находится кнопка переключения на вторую СУБД. Выбор хранится в пользовательской session, поэтому разные пользователи могут работать с разными активными БД.
+
+## Что можно демонстрировать
+
+- Полный CRUD основных сущностей.
+- Раздел `Справочники` с CRUD для `vehicle_class`, `vehicle_status`, `fuel_type`, `transmission_type`, `acquisition_type`, `maintenance_type`, `payment_type`, `contract_type`, `contract_status`.
+- Добавление связанной записи через кнопку `+` рядом с foreign key dropdown.
+- Возврат на исходную форму после `+` с восстановлением уже введённых значений и выбором новой записи.
+- Поиск автомобилей по марке, модели, госномеру и VIN.
+- Каскадный поиск: марка -> модели -> госномера -> VIN.
+- Каскадный поиск путевых листов: водитель -> связанные автомобили.
+- Отчёты по пробегу, топливу, обслуживанию, статусам, классам, текущей аренде и сводке БД.
+- Журнал операций доступен для просмотра и фильтрации.
+
+## JSON endpoints для зависимых списков
+
+- `GET /api/options/vehicles?driver_id=...`
+- `GET /api/options/drivers?vehicle_id=...`
+- `GET /api/options/models?make=...`
+- `GET /api/options/reg-numbers?make=...&model=...`
+- `GET /api/options/vins?reg_number=...`
+- `GET /api/options/contracts?counterparty_id=...`
+- `GET /api/options/rental-events?contract_id=...`
+- `GET /api/options/trip-sheets?vehicle_id=...&driver_id=...`
+- `GET /api/options/fuel-transactions?vehicle_id=...`
+- `GET /api/options/maintenance-orders?vehicle_id=...`
+
+Все endpoints используют активную СУБД из session.
+
+## Проверка
+
+```powershell
+go test ./...
+docker compose config
+```
+
+Если Docker Desktop запущен, полная проверка:
+
+```powershell
 docker compose up --build
 ```
 
-По умолчанию в `docker-compose.yml`:
-- `AUTO_MIGRATE=true`
-- `AUTO_SEED=true`
+## Компромисс по MySQL
 
-Это означает, что при первом старте схема и демо-данные загрузятся автоматически.
-
-Приложение: `http://localhost:8080`
-
-## Учетные данные по умолчанию
-- Логин: `admin`
-- Пароль: `admin123`
-
-(Изменяются через `ADMIN_USERNAME` / `ADMIN_PASSWORD`)
-
-## Seed-данные
-В `seeds/001_seed.sql` включены реалистичные данные:
-- 60 автомобилей (минимум по ТЗ: 50)
-- заполненные справочники
-- водители, подразделения, контрагенты
-- назначения, путевые листы, топливные операции
-- обслуживание, договоры, события аренды
-
-## Карта страниц
-- `/` — главная
-- `/login` — вход
-- CRUD-разделы:
-  - `/vehicles`
-  - `/drivers`
-  - `/departments`
-  - `/assignments`
-  - `/trip-sheets`
-  - `/fuel-txns`
-  - `/maintenance-orders`
-  - `/counterparties`
-  - `/contracts`
-  - `/rental-events`
-- Поиск:
-  - `/search`
-  - `/search/vehicles-by-make`
-  - `/search/trips`
-  - `/search/mileage`
-- Отчёты:
-  - `/reports`
-  - `/reports/mileage`
-  - `/reports/fuel`
-  - `/reports/maintenance`
-  - `/reports/by-status`
-  - `/reports/by-class`
-  - `/reports/current-rentals`
-  - `/reports/summary`
-- `/help` — справка
-
-## Развертывание на Linux сервере
-Рекомендуемый путь:
-1. Скопировать репозиторий на сервер.
-2. Настроить env (`ADMIN_*`, `SESSION_KEY`, параметры БД).
-3. Запустить `docker compose up -d --build`.
-4. Проксировать порт приложения (например, через Nginx).
-5. Использовать volume `pgdata` для постоянного хранения данных БД.
-
-## Ограничения
-- Реализована минимальная модель авторизации: один администратор из env.
-- RBAC (admin/viewer) не выделен в отдельную подсистему.
-
+PostgreSQL-миграция использует exclusion constraint для запрета пересечения периодов закрепления автомобиля. В MySQL прямого аналога нет, поэтому такая проверка дополнительно реализована на уровне приложения при создании и редактировании закреплений.

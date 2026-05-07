@@ -2,10 +2,13 @@ package handlers
 
 import (
 	"fmt"
+	"html/template"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
+	dbx "bd_lab_3/internal/db"
 	"bd_lab_3/internal/models"
 	"bd_lab_3/internal/repositories"
 
@@ -19,14 +22,17 @@ func (a *App) getEntity(slug string) (models.EntityConfig, bool) {
 
 func (a *App) baseData(w http.ResponseWriter, r *http.Request, title, active string) models.BasePageData {
 	username, auth := a.authMW.CurrentUser(r)
+	activeDB := a.activeDB(r)
 
 	return models.BasePageData{
-		Title:      title,
-		ActiveMenu: active,
-		Username:   username,
-		Auth:       auth,
-		Flash:      a.authMW.PullFlash(w, r),
-		NavItems:   a.navItems(active),
+		Title:        title,
+		ActiveMenu:   active,
+		Username:     username,
+		Auth:         auth,
+		ActiveDB:     string(activeDB),
+		ActiveDBName: activeDB.DisplayName(),
+		Flash:        a.authMW.PullFlash(w, r),
+		NavItems:     a.navItems(active),
 	}
 }
 
@@ -36,6 +42,9 @@ func (a *App) navItems(active string) []models.NavItem {
 
 	for _, slug := range a.entityOrder {
 		entity := a.entities[slug]
+		if entity.Category == "lookup" {
+			continue
+		}
 		items = append(items, models.NavItem{
 			Name:   entity.Title,
 			Path:   "/" + slug,
@@ -44,12 +53,17 @@ func (a *App) navItems(active string) []models.NavItem {
 	}
 
 	items = append(items,
+		models.NavItem{Name: "Справочники", Path: "/lookups", Active: active == "lookups"},
 		models.NavItem{Name: "Поиск", Path: "/search", Active: active == "search"},
 		models.NavItem{Name: "Отчеты", Path: "/reports", Active: active == "reports"},
 		models.NavItem{Name: "Справка", Path: "/help", Active: active == "help"},
 	)
 
 	return items
+}
+
+func (a *App) activeDB(r *http.Request) dbx.DBType {
+	return a.authMW.ActiveDB(r, dbx.ParseDBType(a.cfg.DefaultDB, dbx.DBPostgres))
 }
 
 func (a *App) render(w http.ResponseWriter, r *http.Request, templateName string, data any) {
@@ -90,7 +104,7 @@ func (a *App) parseListParams(r *http.Request, entity models.EntityConfig) repos
 	}
 }
 
-func buildQueryTail(params repositories.ListParams) string {
+func buildQueryTail(params repositories.ListParams) template.URL {
 	values := url.Values{}
 	if params.PerPage > 0 {
 		values.Set("per_page", strconv.Itoa(params.PerPage))
@@ -114,10 +128,10 @@ func buildQueryTail(params repositories.ListParams) string {
 	if encoded == "" {
 		return ""
 	}
-	return "&" + encoded
+	return template.URL("&" + encoded)
 }
 
-func buildFilterTail(params repositories.ListParams) string {
+func buildFilterTail(params repositories.ListParams) template.URL {
 	values := url.Values{}
 	if params.PerPage > 0 {
 		values.Set("per_page", strconv.Itoa(params.PerPage))
@@ -135,7 +149,7 @@ func buildFilterTail(params repositories.ListParams) string {
 	if encoded == "" {
 		return ""
 	}
-	return "&" + encoded
+	return template.URL("&" + encoded)
 }
 
 func parseIntDefault(value string, fallback int) int {
@@ -179,6 +193,97 @@ func mapToValues(row map[string]string, fields []models.Field) map[string]string
 		values[f.Name] = row[f.Name]
 	}
 	return values
+}
+
+func draftValues(r *http.Request, fields []models.Field) map[string]string {
+	values := make(map[string]string, len(fields))
+	q := r.URL.Query()
+	for _, f := range fields {
+		values[f.Name] = q.Get("draft_" + f.Name)
+		if selected := q.Get("selected_" + f.Name); selected != "" {
+			values[f.Name] = selected
+		}
+	}
+	return values
+}
+
+func returnToWithDraft(r *http.Request) string {
+	returnTo := r.URL.Query().Get("return_to")
+	if returnTo == "" {
+		return ""
+	}
+	values := url.Values{}
+	for key, vals := range r.URL.Query() {
+		if strings.HasPrefix(key, "draft_") {
+			for _, val := range vals {
+				values.Add(key, val)
+			}
+		}
+	}
+	if encoded := values.Encode(); encoded != "" {
+		sep := "?"
+		if strings.Contains(returnTo, "?") {
+			sep = "&"
+		}
+		returnTo += sep + encoded
+	}
+	return returnTo
+}
+
+func appendQuery(rawURL, key, value string) string {
+	sep := "?"
+	if strings.Contains(rawURL, "?") {
+		sep = "&"
+	}
+	return rawURL + sep + url.QueryEscape(key) + "=" + url.QueryEscape(value)
+}
+
+func relatedSlugs(entity models.EntityConfig) map[string]string {
+	result := make(map[string]string)
+	for _, f := range entity.FormFields() {
+		if f.Type != "select" || f.RefTable == "" {
+			continue
+		}
+		if slug := slugForTable(f.RefTable); slug != "" {
+			result[f.Name] = slug
+		}
+	}
+	return result
+}
+
+func slugForTable(table string) string {
+	switch table {
+	case "vehicle":
+		return "vehicles"
+	case "driver":
+		return "drivers"
+	case "department":
+		return "departments"
+	case "vehicle_class":
+		return "vehicle-classes"
+	case "vehicle_status":
+		return "vehicle-statuses"
+	case "fuel_type":
+		return "fuel-types"
+	case "transmission_type":
+		return "transmission-types"
+	case "acquisition_type":
+		return "acquisition-types"
+	case "maintenance_type":
+		return "maintenance-types"
+	case "payment_type":
+		return "payment-types"
+	case "contract_type":
+		return "contract-types"
+	case "contract_status":
+		return "contract-statuses"
+	case "counterparty":
+		return "counterparties"
+	case "contract":
+		return "contracts"
+	default:
+		return ""
+	}
 }
 
 func makeErrorMap(err error) map[string]string {

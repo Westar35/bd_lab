@@ -4,14 +4,18 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
 	"strings"
 	"time"
 
+	dbx "bd_lab_3/internal/db"
 	"bd_lab_3/internal/models"
 )
+
+var ErrAssignmentOverlap = errors.New("периоды назначения пересекаются для выбранного автомобиля")
 
 // ListParams параметры выборки списка.
 type ListParams struct {
@@ -32,11 +36,12 @@ type ListResult struct {
 
 // EntityRepository репозиторий универсального CRUD.
 type EntityRepository struct {
-	db *sql.DB
+	db     *sql.DB
+	dbType dbx.DBType
 }
 
-func NewEntityRepository(db *sql.DB) *EntityRepository {
-	return &EntityRepository{db: db}
+func NewEntityRepository(db *sql.DB, dbType dbx.DBType) *EntityRepository {
+	return &EntityRepository{db: db, dbType: dbType}
 }
 
 // List возвращает страницу списка сущности.
@@ -57,7 +62,7 @@ func (r *EntityRepository) List(ctx context.Context, entity models.EntityConfig,
 		}
 	}
 
-	selectParts := []string{"t.id::text AS id"}
+	selectParts := []string{r.textExpr("t", "id", "id")}
 	listFieldSet := make(map[string]struct{}, len(entity.ListColumns))
 	for _, col := range entity.ListColumns {
 		listFieldSet[col] = struct{}{}
@@ -83,14 +88,14 @@ func (r *EntityRepository) List(ctx context.Context, entity models.EntityConfig,
 	argsWithPaging = append(argsWithPaging, params.PerPage, offset)
 
 	query := fmt.Sprintf(
-		"SELECT %s FROM %s t %s ORDER BY t.%s %s LIMIT $%d OFFSET $%d",
+		"SELECT %s FROM %s t %s ORDER BY t.%s %s LIMIT %s OFFSET %s",
 		strings.Join(selectParts, ", "),
 		entity.Table,
 		whereSQL,
 		sortField,
 		dir,
-		len(args)+1,
-		len(args)+2,
+		r.placeholder(len(args)+1),
+		r.placeholder(len(args)+2),
 	)
 
 	rows, err := r.db.QueryContext(ctx, query, argsWithPaging...)
@@ -115,7 +120,7 @@ func (r *EntityRepository) List(ctx context.Context, entity models.EntityConfig,
 // GetByID возвращает карточку сущности в отображаемом виде.
 func (r *EntityRepository) GetByID(ctx context.Context, entity models.EntityConfig, id int64) (map[string]string, error) {
 	selectParts := make([]string, 0, len(entity.Fields)+1)
-	selectParts = append(selectParts, "t.id::text AS id")
+	selectParts = append(selectParts, r.textExpr("t", "id", "id"))
 
 	for _, f := range entity.DetailFields() {
 		if f.Name == "id" {
@@ -125,9 +130,10 @@ func (r *EntityRepository) GetByID(ctx context.Context, entity models.EntityConf
 	}
 
 	query := fmt.Sprintf(
-		"SELECT %s FROM %s t WHERE t.id = $1",
+		"SELECT %s FROM %s t WHERE t.id = %s",
 		strings.Join(selectParts, ", "),
 		entity.Table,
+		r.placeholder(1),
 	)
 
 	rows, err := r.db.QueryContext(ctx, query, id)
@@ -152,13 +158,14 @@ func (r *EntityRepository) GetRawByID(ctx context.Context, entity models.EntityC
 	formFields := entity.FormFields()
 	selectParts := make([]string, 0, len(formFields))
 	for _, f := range formFields {
-		selectParts = append(selectParts, fmt.Sprintf("t.%s::text AS %s", f.Name, f.Name))
+		selectParts = append(selectParts, r.textExpr("t", f.Name, f.Name))
 	}
 
 	query := fmt.Sprintf(
-		"SELECT %s FROM %s t WHERE t.id = $1",
+		"SELECT %s FROM %s t WHERE t.id = %s",
 		strings.Join(selectParts, ", "),
 		entity.Table,
+		r.placeholder(1),
 	)
 
 	rows, err := r.db.QueryContext(ctx, query, id)
@@ -185,36 +192,54 @@ func (r *EntityRepository) Create(ctx context.Context, entity models.EntityConfi
 		return 0, err
 	}
 
+	if err = r.validateAssignmentOverlap(ctx, tx, entity, values, 0); err != nil {
+		_ = tx.Rollback()
+		return 0, err
+	}
+
 	cols := make([]string, 0)
 	placeholders := make([]string, 0)
 	args := make([]any, 0)
 
 	for _, f := range entity.FormFields() {
 		cols = append(cols, f.Name)
-		placeholders = append(placeholders, fmt.Sprintf("$%d", len(args)+1))
+		placeholders = append(placeholders, r.placeholder(len(args)+1))
 		args = append(args, values[f.Name])
 	}
 
 	query := fmt.Sprintf(
-		"INSERT INTO %s (%s) VALUES (%s) RETURNING id",
+		"INSERT INTO %s (%s) VALUES (%s)",
 		entity.Table,
 		strings.Join(cols, ", "),
 		strings.Join(placeholders, ", "),
 	)
 
 	var id int64
-	if err = tx.QueryRowContext(ctx, query, args...).Scan(&id); err != nil {
-		_ = tx.Rollback()
-		return 0, err
+	if r.dbType == dbx.DBPostgres {
+		if err = tx.QueryRowContext(ctx, query+" RETURNING id", args...).Scan(&id); err != nil {
+			_ = tx.Rollback()
+			return 0, err
+		}
+	} else {
+		result, execErr := tx.ExecContext(ctx, query, args...)
+		if execErr != nil {
+			_ = tx.Rollback()
+			return 0, execErr
+		}
+		id, err = result.LastInsertId()
+		if err != nil {
+			_ = tx.Rollback()
+			return 0, err
+		}
 	}
 
-	after, err := fetchRowJSON(ctx, tx, entity.Table, id)
+	after, err := fetchRowJSON(ctx, tx, r.dbType, entity.Table, id)
 	if err != nil {
 		_ = tx.Rollback()
 		return 0, err
 	}
 
-	if err = insertAudit(ctx, tx, actor, "INSERT", entity.Table, id, nil, after); err != nil {
+	if err = insertAudit(ctx, tx, r.dbType, actor, "INSERT", entity.Table, id, nil, after); err != nil {
 		_ = tx.Rollback()
 		return 0, err
 	}
@@ -233,7 +258,12 @@ func (r *EntityRepository) Update(ctx context.Context, entity models.EntityConfi
 		return err
 	}
 
-	before, err := fetchRowJSON(ctx, tx, entity.Table, id)
+	if err = r.validateAssignmentOverlap(ctx, tx, entity, values, id); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	before, err := fetchRowJSON(ctx, tx, r.dbType, entity.Table, id)
 	if err != nil {
 		_ = tx.Rollback()
 		return err
@@ -243,16 +273,16 @@ func (r *EntityRepository) Update(ctx context.Context, entity models.EntityConfi
 	args := make([]any, 0)
 
 	for _, f := range entity.FormFields() {
-		sets = append(sets, fmt.Sprintf("%s = $%d", f.Name, len(args)+1))
+		sets = append(sets, fmt.Sprintf("%s = %s", f.Name, r.placeholder(len(args)+1)))
 		args = append(args, values[f.Name])
 	}
 	args = append(args, id)
 
 	query := fmt.Sprintf(
-		"UPDATE %s SET %s WHERE id = $%d",
+		"UPDATE %s SET %s WHERE id = %s",
 		entity.Table,
 		strings.Join(sets, ", "),
-		len(args),
+		r.placeholder(len(args)),
 	)
 
 	result, err := tx.ExecContext(ctx, query, args...)
@@ -271,13 +301,13 @@ func (r *EntityRepository) Update(ctx context.Context, entity models.EntityConfi
 		return sql.ErrNoRows
 	}
 
-	after, err := fetchRowJSON(ctx, tx, entity.Table, id)
+	after, err := fetchRowJSON(ctx, tx, r.dbType, entity.Table, id)
 	if err != nil {
 		_ = tx.Rollback()
 		return err
 	}
 
-	if err = insertAudit(ctx, tx, actor, "UPDATE", entity.Table, id, before, after); err != nil {
+	if err = insertAudit(ctx, tx, r.dbType, actor, "UPDATE", entity.Table, id, before, after); err != nil {
 		_ = tx.Rollback()
 		return err
 	}
@@ -292,13 +322,13 @@ func (r *EntityRepository) Delete(ctx context.Context, entity models.EntityConfi
 		return err
 	}
 
-	before, err := fetchRowJSON(ctx, tx, entity.Table, id)
+	before, err := fetchRowJSON(ctx, tx, r.dbType, entity.Table, id)
 	if err != nil {
 		_ = tx.Rollback()
 		return err
 	}
 
-	result, err := tx.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE id = $1", entity.Table), id)
+	result, err := tx.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE id = %s", entity.Table, r.placeholder(1)), id)
 	if err != nil {
 		_ = tx.Rollback()
 		return err
@@ -314,7 +344,7 @@ func (r *EntityRepository) Delete(ctx context.Context, entity models.EntityConfi
 		return sql.ErrNoRows
 	}
 
-	if err = insertAudit(ctx, tx, actor, "DELETE", entity.Table, id, before, nil); err != nil {
+	if err = insertAudit(ctx, tx, r.dbType, actor, "DELETE", entity.Table, id, before, nil); err != nil {
 		_ = tx.Rollback()
 		return err
 	}
@@ -334,9 +364,16 @@ func (r *EntityRepository) SelectOptions(ctx context.Context, field models.Field
 
 	query := fmt.Sprintf(
 		"SELECT id::text AS id, %s AS label FROM %s ORDER BY label",
-		field.RefLabelExpr,
+		r.refLabelExpr(field.RefTable, ""),
 		field.RefTable,
 	)
+	if r.dbType == dbx.DBMySQL {
+		query = fmt.Sprintf(
+			"SELECT CAST(id AS CHAR) AS id, %s AS label FROM %s ORDER BY label",
+			r.refLabelExpr(field.RefTable, ""),
+			field.RefTable,
+		)
+	}
 
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
@@ -358,6 +395,58 @@ func (r *EntityRepository) SelectOptions(ctx context.Context, field models.Field
 	}
 
 	return options, nil
+}
+
+func (r *EntityRepository) validateAssignmentOverlap(ctx context.Context, tx *sql.Tx, entity models.EntityConfig, values map[string]any, currentID int64) error {
+	if entity.Table != "vehicle_assignment" {
+		return nil
+	}
+
+	vehicleID, ok := values["vehicle_id"].(int)
+	if !ok || vehicleID <= 0 {
+		return nil
+	}
+	dateFrom, ok := values["date_from"].(time.Time)
+	if !ok {
+		return nil
+	}
+	dateTo := values["date_to"]
+
+	query := fmt.Sprintf(`
+SELECT COUNT(*)
+FROM vehicle_assignment
+WHERE vehicle_id = %s
+  AND id <> %s
+  AND date_from <= COALESCE(%s::date, DATE '9999-12-31')
+  AND COALESCE(date_to, DATE '9999-12-31') >= %s`,
+		r.placeholder(1),
+		r.placeholder(2),
+		r.placeholder(3),
+		r.placeholder(4),
+	)
+	if r.dbType == dbx.DBMySQL {
+		query = fmt.Sprintf(`
+SELECT COUNT(*)
+FROM vehicle_assignment
+WHERE vehicle_id = %s
+  AND id <> %s
+  AND date_from <= COALESCE(%s, DATE('9999-12-31'))
+  AND COALESCE(date_to, DATE('9999-12-31')) >= %s`,
+			r.placeholder(1),
+			r.placeholder(2),
+			r.placeholder(3),
+			r.placeholder(4),
+		)
+	}
+
+	var count int
+	if err := tx.QueryRowContext(ctx, query, vehicleID, currentID, dateTo, dateFrom).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return ErrAssignmentOverlap
+	}
+	return nil
 }
 
 func (r *EntityRepository) resolveSortField(entity models.EntityConfig, sort string) string {
@@ -385,23 +474,33 @@ func (r *EntityRepository) displayExpr(field models.Field, alias string) string 
 			for _, opt := range field.StaticOptions {
 				cases = append(cases, fmt.Sprintf("WHEN %s.%s = '%s' THEN '%s'", alias, field.Name, opt.ID, opt.Label))
 			}
-			return fmt.Sprintf("COALESCE((CASE %s ELSE %s.%s::text END), '') AS %s", strings.Join(cases, " "), alias, field.Name, safeAlias)
+			return fmt.Sprintf("COALESCE((CASE %s ELSE %s END), '') AS %s", strings.Join(cases, " "), r.castExpr(alias, field.Name), safeAlias)
 		}
 		if field.RefTable != "" && field.RefLabelExpr != "" {
+			if r.dbType == dbx.DBMySQL {
+				return fmt.Sprintf(
+					"COALESCE((SELECT %s FROM %s ref WHERE ref.id = %s.%s), '') AS %s",
+					r.refLabelExpr(field.RefTable, "ref"),
+					field.RefTable,
+					alias,
+					field.Name,
+					safeAlias,
+				)
+			}
 			return fmt.Sprintf(
 				"COALESCE((SELECT %s FROM %s ref WHERE ref.id = %s.%s), '')::text AS %s",
-				field.RefLabelExpr,
+				r.refLabelExpr(field.RefTable, "ref"),
 				field.RefTable,
 				alias,
 				field.Name,
 				safeAlias,
 			)
 		}
-		return fmt.Sprintf("COALESCE(%s.%s::text, '') AS %s", alias, field.Name, safeAlias)
+		return r.textExpr(alias, field.Name, safeAlias)
 	case "checkbox":
 		return fmt.Sprintf("CASE WHEN %s.%s THEN 'Да' ELSE 'Нет' END AS %s", alias, field.Name, safeAlias)
 	default:
-		return fmt.Sprintf("COALESCE(%s.%s::text, '') AS %s", alias, field.Name, safeAlias)
+		return r.textExpr(alias, field.Name, safeAlias)
 	}
 }
 
@@ -412,32 +511,27 @@ func (r *EntityRepository) buildWhereClause(entity models.EntityConfig, params L
 	if strings.TrimSpace(params.Q) != "" {
 		sub := make([]string, 0, len(entity.SearchColumns)+4)
 		queryText := strings.TrimSpace(params.Q)
-
-		// Всегда поддерживаем поиск по ID записи.
-		args = append(args, "%"+queryText+"%")
-		sub = append(sub, fmt.Sprintf("t.id::text ILIKE $%d", len(args)))
-
 		for _, col := range entity.SearchColumns {
-			args = append(args, "%"+queryText+"%")
-			sub = append(sub, fmt.Sprintf("t.%s::text ILIKE $%d", col, len(args)))
+			args = append(args, "%"+strings.ToLower(queryText)+"%")
+			sub = append(sub, r.likeExpr(fmt.Sprintf("t.%s", col), len(args)))
 		}
-
-		// Для полей-справочников даем поиск по отображаемому названию (label).
 		for _, field := range entity.Fields {
 			if field.Type != "select" || field.RefTable == "" || field.RefLabelExpr == "" {
 				continue
 			}
-			args = append(args, "%"+queryText+"%")
+			args = append(args, "%"+strings.ToLower(queryText)+"%")
 			sub = append(sub, fmt.Sprintf(
-				"EXISTS (SELECT 1 FROM %s ref WHERE ref.id = t.%s AND (%s)::text ILIKE $%d)",
+				"EXISTS (SELECT 1 FROM %s ref WHERE ref.id = t.%s AND %s)",
 				field.RefTable,
 				field.Name,
-				field.RefLabelExpr,
-				len(args),
+				r.likeRawExpr(r.refLabelExpr(field.RefTable, "ref"), len(args)),
 			))
 		}
-
-		clauses = append(clauses, "("+strings.Join(sub, " OR ")+")")
+		if len(sub) == 0 {
+			clauses = append(clauses, "1=0")
+		} else {
+			clauses = append(clauses, "("+strings.Join(sub, " OR ")+")")
+		}
 	}
 
 	for key, val := range params.Filters {
@@ -454,7 +548,7 @@ func (r *EntityRepository) buildWhereClause(entity models.EntityConfig, params L
 		case "checkbox":
 			boolVal := strings.EqualFold(val, "true") || val == "1"
 			args = append(args, boolVal)
-			clauses = append(clauses, fmt.Sprintf("t.%s = $%d", key, len(args)))
+			clauses = append(clauses, fmt.Sprintf("t.%s = %s", key, r.placeholder(len(args))))
 		default:
 			if (field.Type == "select" && len(field.StaticOptions) == 0) || field.Type == "int" {
 				intVal, err := strconv.Atoi(val)
@@ -462,11 +556,11 @@ func (r *EntityRepository) buildWhereClause(entity models.EntityConfig, params L
 					continue
 				}
 				args = append(args, intVal)
-				clauses = append(clauses, fmt.Sprintf("t.%s = $%d", key, len(args)))
+				clauses = append(clauses, fmt.Sprintf("t.%s = %s", key, r.placeholder(len(args))))
 				continue
 			}
-			args = append(args, val)
-			clauses = append(clauses, fmt.Sprintf("t.%s::text ILIKE $%d", key, len(args)))
+			args = append(args, "%"+strings.ToLower(val)+"%")
+			clauses = append(clauses, r.likeExpr(fmt.Sprintf("t.%s", key), len(args)))
 		}
 	}
 
@@ -529,19 +623,33 @@ func anyToString(v any) string {
 	}
 }
 
-func fetchRowJSON(ctx context.Context, tx *sql.Tx, table string, id int64) (json.RawMessage, error) {
-	query := fmt.Sprintf("SELECT row_to_json(t) FROM (SELECT * FROM %s WHERE id = $1) t", table)
-	var raw []byte
-	if err := tx.QueryRowContext(ctx, query, id).Scan(&raw); err != nil {
+func fetchRowJSON(ctx context.Context, tx *sql.Tx, dbType dbx.DBType, table string, id int64) (json.RawMessage, error) {
+	placeholder := dbType.Placeholder(1)
+	rows, err := tx.QueryContext(ctx, fmt.Sprintf("SELECT * FROM %s WHERE id = %s", table, placeholder), id)
+	if err != nil {
 		return nil, err
 	}
-	return raw, nil
+	defer rows.Close()
+
+	mapped, err := scanRowsToMaps(rows)
+	if err != nil {
+		return nil, err
+	}
+	if len(mapped) == 0 {
+		return nil, sql.ErrNoRows
+	}
+	return json.Marshal(mapped[0])
 }
 
-func insertAudit(ctx context.Context, tx *sql.Tx, actor, action, entity string, entityID int64, before, after json.RawMessage) error {
+func insertAudit(ctx context.Context, tx *sql.Tx, dbType dbx.DBType, actor, action, entity string, entityID int64, before, after json.RawMessage) error {
+	query := `INSERT INTO audit_log (ts, actor, action, entity, entity_id, details_before, details_after)
+         VALUES (now(), $1, $2, $3, $4, $5::jsonb, $6::jsonb)`
+	if dbType == dbx.DBMySQL {
+		query = `INSERT INTO audit_log (ts, actor, action, entity, entity_id, details_before, details_after)
+         VALUES (CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?)`
+	}
 	_, err := tx.ExecContext(ctx,
-		`INSERT INTO audit_log (ts, actor, action, entity, entity_id, details_before, details_after)
-         VALUES (now(), $1, $2, $3, $4, $5::jsonb, $6::jsonb)`,
+		query,
 		actor,
 		action,
 		entity,
@@ -557,4 +665,67 @@ func nullableJSON(raw json.RawMessage) any {
 		return nil
 	}
 	return string(raw)
+}
+
+func (r *EntityRepository) placeholder(n int) string {
+	return r.dbType.Placeholder(n)
+}
+
+func (r *EntityRepository) textExpr(alias, column, asName string) string {
+	return fmt.Sprintf("COALESCE(%s, '') AS %s", r.castExpr(alias, column), asName)
+}
+
+func (r *EntityRepository) castExpr(alias, column string) string {
+	if r.dbType == dbx.DBMySQL {
+		return fmt.Sprintf("CAST(%s.%s AS CHAR)", alias, column)
+	}
+	return fmt.Sprintf("%s.%s::text", alias, column)
+}
+
+func (r *EntityRepository) likeExpr(expr string, arg int) string {
+	return r.likeRawExpr(expr, arg)
+}
+
+func (r *EntityRepository) likeRawExpr(expr string, arg int) string {
+	if r.dbType == dbx.DBMySQL {
+		return fmt.Sprintf("LOWER(CAST(%s AS CHAR)) LIKE %s", expr, r.placeholder(arg))
+	}
+	return fmt.Sprintf("LOWER(%s::text) LIKE %s", expr, r.placeholder(arg))
+}
+
+func (r *EntityRepository) refLabelExpr(table, alias string) string {
+	prefix := ""
+	if alias != "" {
+		prefix = alias + "."
+	}
+	if r.dbType == dbx.DBMySQL {
+		switch table {
+		case "vehicle":
+			return fmt.Sprintf("CONCAT(%smake, ' ', %smodel, ' (', %sreg_number, ')')", prefix, prefix, prefix)
+		case "driver":
+			return prefix + "fio"
+		case "department":
+			return prefix + "name"
+		case "contract":
+			return prefix + "number"
+		case "counterparty":
+			return prefix + "name"
+		default:
+			return prefix + "name"
+		}
+	}
+	switch table {
+	case "vehicle":
+		return fmt.Sprintf("%smake || ' ' || %smodel || ' (' || %sreg_number || ')'", prefix, prefix, prefix)
+	case "driver":
+		return prefix + "fio"
+	case "department":
+		return prefix + "name"
+	case "contract":
+		return prefix + "number"
+	case "counterparty":
+		return prefix + "name"
+	default:
+		return prefix + "name"
+	}
 }

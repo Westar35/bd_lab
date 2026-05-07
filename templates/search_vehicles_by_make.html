@@ -1,11 +1,39 @@
 {{define "search_vehicles_by_make.html"}}
 {{template "header" .}}
-<h1>Поиск автомобилей по марке</h1>
+<h1>Поиск автомобилей</h1>
+<p class="muted">Ищите по марке, модели, госномеру и VIN. Списки модели, госномера и VIN связаны между собой.</p>
 
 <form method="get" class="filters-bar">
     <div class="filter-item">
         <label for="make">Марка автомобиля</label>
-        <input id="make" name="make" value="{{.Make}}" placeholder="Например, Toyota">
+        <input id="make" name="make" value="{{.Make}}" placeholder="Например, Toyota" data-cascade-target="model" data-cascade-url="/api/options/models" data-cascade-param="make">
+    </div>
+    <div class="filter-item">
+        <label for="model">Модель</label>
+        <select id="model" name="model" data-cascade-target="reg_number" data-cascade-url="/api/options/reg-numbers" data-cascade-param="model" data-cascade-extra="make:make">
+            <option value="">Все модели</option>
+            {{range .Models}}
+                <option value="{{.ID}}" {{if eq $.Model .ID}}selected{{end}}>{{.Label}}</option>
+            {{end}}
+        </select>
+    </div>
+    <div class="filter-item">
+        <label for="reg_number">Гос. номер</label>
+        <select id="reg_number" name="reg_number" data-cascade-target="vin" data-cascade-url="/api/options/vins" data-cascade-param="reg_number">
+            <option value="">Все госномера</option>
+            {{range .RegNumbers}}
+                <option value="{{.ID}}" {{if eq $.RegNumber .ID}}selected{{end}}>{{.Label}}</option>
+            {{end}}
+        </select>
+    </div>
+    <div class="filter-item">
+        <label for="vin">VIN</label>
+        <select id="vin" name="vin">
+            <option value="">Все VIN</option>
+            {{range .VINs}}
+                <option value="{{.ID}}" {{if eq $.VIN .ID}}selected{{end}}>{{.Label}}</option>
+            {{end}}
+        </select>
     </div>
     <div class="filters-actions">
         <button class="btn btn-primary" type="submit">Найти</button>
@@ -22,6 +50,9 @@
                 <th>Модель</th>
                 <th>Год</th>
                 <th>Гос. номер</th>
+                <th>VIN</th>
+                <th>Класс</th>
+                <th>Топливо</th>
                 <th>Статус</th>
             </tr>
         </thead>
@@ -33,11 +64,14 @@
                         <td>{{index . "model"}}</td>
                         <td>{{index . "year"}}</td>
                         <td>{{index . "reg_number"}}</td>
+                        <td>{{index . "vin"}}</td>
+                        <td>{{index . "class_name"}}</td>
+                        <td>{{index . "fuel_type"}}</td>
                         <td>{{index . "status_name"}}</td>
                     </tr>
                 {{end}}
             {{else}}
-                <tr><td colspan="5">Ничего не найдено</td></tr>
+                <tr><td colspan="8">Ничего не найдено</td></tr>
             {{end}}
         </tbody>
     </table>
